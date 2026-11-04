@@ -1,0 +1,34 @@
+{
+  "name": "aesyr-studio-v2",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test server/*.test.ts shared/*.test.ts src/data/*.test.ts && node --test tests/db",
+    "test:db": "node --test tests/db",
+    "db:start": "supabase start",
+    "db:reset": "supabase db reset"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "three": "^0.186.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.0",
+    "vite": "7.3.7"
+  }
+}

@@ -1,0 +1,105 @@
+/* Design tokens. Surfaces from SimpleScript's theme set, elevation overlays and
+   indigo accent from Storyboarder. Themes switch with <html data-theme="…">. */
+
+:root {
+  /* type & shape (theme-independent) */
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-script: "Courier Prime", "Courier New", Courier, monospace;
+  --fs-ui: 13px;
+  --fs-meta: 11px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-card: 10px;
+  --bar-h: 40px;
+  --status-h: 26px;
+  --divider: 6px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* accent: Storyboarder indigo */
+  --accent: #5c65c0;
+  --accent-hi: #8d89cf;
+  --accent-lo: #53537c;
+  --on-accent: #ffffff;
+
+  --note: #f0b429;
+  --danger: #e5484d;
+  --ok: #5aab54;
+
+  /* category pills (shot list) */
+  --pill-cast: #e0524b;
+  --pill-location: #5aab54;
+  --pill-size: #d95fa0;
+  --pill-view: #8f6fd6;
+  --pill-angle: #4b8fe0;
+  --pill-move: #3fae9f;
+
+  /* beat / scene colours */
+  --beat-1: #8a8f98; --beat-2: #e0524b; --beat-3: #e8873b;
+  --beat-4: #dcb63a; --beat-5: #5aab54; --beat-6: #3fae9f;
+  --beat-7: #4b8fe0; --beat-8: #8f6fd6; --beat-9: #d95fa0;
+}
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --canvas-bg: #161618;
+  --page-bg: #242426;
+  --panel-bg: #232325;
+  --border: #333335;
+  --ctx-bg: #2c2c2e;
+  --ctx-border: #3e3e40;
+  --hover: rgba(255, 255, 255, .05);
+  --raised: rgba(255, 255, 255, .10);
+  --pressed: rgba(255, 255, 255, .20);
+  --text: #dcdcdc;
+  --text-dim: #939393;
+  --text-faint: rgba(255, 255, 255, .4);
+  --focus: var(--accent-hi);
+  --selection: rgba(92, 101, 192, .28);
+  --shadow-page: 0 2px 28px rgba(0, 0, 0, .65);
+  --grid-dot: rgba(255, 255, 255, .06);
+  color-scheme: dark;
+}
+
+:root[data-theme="midnight"] {
+  --bg: #0d1117;
+  --canvas-bg: #0a0d12;
+  --page-bg: #161b22;
+  --panel-bg: #0d1117;
+  --border: #21262d;
+  --ctx-bg: #161b22;
+  --ctx-border: #30363d;
+  --hover: rgba(255, 255, 255, .05);
+  --raised: rgba(255, 255, 255, .09);
+  --pressed: rgba(255, 255, 255, .18);
+  --text: #c9d1d9;
+  --text-dim: #8b9aab;
+  --text-faint: rgba(201, 209, 217, .4);
+  --focus: var(--accent-hi);
+  --selection: rgba(92, 101, 192, .3);
+  --shadow-page: 0 2px 28px rgba(0, 0, 0, .75);
+  --grid-dot: rgba(255, 255, 255, .05);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #e4e4e6;
+  --canvas-bg: #ececee;
+  --page-bg: #ffffff;
+  --panel-bg: #f4f4f5;
+  --border: #d8d8dc;
+  --ctx-bg: #ffffff;
+  --ctx-border: #d4d4d8;
+  --hover: rgba(0, 0, 0, .04);
+  --raised: rgba(0, 0, 0, .07);
+  --pressed: rgba(0, 0, 0, .12);
+  --text: #18181b;
+  --text-dim: #5f5f66;
+  --text-faint: rgba(0, 0, 0, .4);
+  --accent: #4f58b3;
+  --focus: var(--accent);
+  --selection: rgba(79, 88, 179, .18);
+  --shadow-page: 0 2px 28px rgba(0, 0, 0, .1);
+  --grid-dot: rgba(0, 0, 0, .08);
+  color-scheme: light;
+}
