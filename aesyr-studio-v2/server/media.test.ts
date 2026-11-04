@@ -30,3 +30,26 @@ test("saves accepted audio under a random name; rejects others", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("renameGlbAnimations: renames clips and keeps a valid GLB", async () => {
+  const { renameGlbAnimations, isGlb } = await import("./media");
+  const json = new TextEncoder().encode(JSON.stringify({ asset: { version: "2.0" }, animations: [{ name: "Reconstructed_Action", channels: [], samplers: [] }] }).padEnd(84, " "));
+  const bin = new Uint8Array([8, 0, 0, 0, 0x42, 0x49, 0x4e, 0x00, 1, 2, 3, 4, 5, 6, 7, 8]);
+  const glb = new Uint8Array(20 + json.length + bin.length);
+  const v = new DataView(glb.buffer);
+  glb.set([0x67, 0x6c, 0x54, 0x46], 0);
+  v.setUint32(4, 2, true);
+  v.setUint32(8, glb.length, true);
+  v.setUint32(12, json.length, true);
+  v.setUint32(16, 0x4e4f534a, true);
+  glb.set(json, 20);
+  glb.set(bin, 20 + json.length);
+  const out = renameGlbAnimations(glb, ["waves its right hand 1"]);
+  const ov = new DataView(out.buffer);
+  assert.ok(isGlb(out));
+  assert.equal(ov.getUint32(8, true), out.length);
+  const len = ov.getUint32(12, true);
+  assert.equal(len % 4, 0);
+  assert.equal(JSON.parse(new TextDecoder().decode(out.subarray(20, 20 + len))).animations[0].name, "waves its right hand 1");
+  assert.deepEqual([...out.subarray(20 + len)], [...bin]);
+});

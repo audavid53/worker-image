@@ -7,7 +7,8 @@ Only fixed recipes run here. The recipe JSON is data validated by the app
 (shared/motion.ts ``blenderRecipeSchema``); it never contains code.
 
 Recipes: ``object-preset`` (spin, bob, hover, ...), ``keyframes`` (custom object motion),
-``normalize`` (decimate + ground) and ``merge-clips`` (gather clips of one rig into one GLB).
+``normalize`` (decimate + ground), ``merge-clips`` (gather clips of one rig into one GLB) and
+``simplify-rig`` (drop finger / twist / face bones, keeping their skin weights).
 
 Studio is Y-up metres; Blender is Z-up. A Studio vector (x, y, z) is Blender (x, -z, y),
 matching the glTF importer/exporter. Keyframes are offsets from the asset's rest pose.
@@ -18,6 +19,7 @@ listing the clip names in the file.
 
 import json
 import math
+import re
 import sys
 
 import bpy
@@ -375,6 +377,78 @@ def merge_clips(base_objects, sources):
     return added
 
 
+# Bone groups simplify-rig can drop. Fixed patterns only: requests choose groups, never patterns.
+DROP_PATTERNS = {
+    "fingers": re.compile(r"(thumb|index|middle|mid|ring|pinky|finger)[_.]?\d*$", re.I),
+    # limb helper bones (CalfTwist01, KneeShareBone …); a neck "twist" chain is the real neck, keep it
+    "twist": re.compile(r"((arm|leg|thigh|calf|shin|forearm|upperarm|wrist|ankle)_?twist|share)", re.I),
+    "face": re.compile(r"(eye|facial|jaw|brow|lid)", re.I),
+}
+
+
+def simplify_rig(objects, groups):
+    """Remove bone groups, giving each removed bone's skin weights to its nearest kept ancestor.
+
+    UniMate takes at most 71 joints; a Tripo biped has ~78 (30 of them fingers). Toy-like
+    characters lose nothing visible, and the mesh still deforms because no weight is dropped.
+    """
+    patterns = [DROP_PATTERNS[g] for g in groups]
+    armatures = [o for o in objects if o.type == "ARMATURE"]
+    if not armatures:
+        raise ValueError("The model has no rig.")
+    removed = 0
+    for arm in armatures:
+        drop = {b.name for b in arm.data.bones if any(p.search(b.name) for p in patterns)}
+        if not drop:
+            continue
+
+        def keeper(name):
+            bone = arm.data.bones[name].parent
+            while bone is not None and bone.name in drop:
+                bone = bone.parent
+            return bone.name if bone is not None else None
+
+        target = {name: keeper(name) for name in drop}
+        meshes = [o for o in objects if o.type == "MESH" and any(m.type == "ARMATURE" and m.object == arm for m in o.modifiers)]
+        for mesh in meshes:
+            groups_by_name = {g.name: g for g in mesh.vertex_groups}
+            for name in drop:
+                source = groups_by_name.get(name)
+                if source is None:
+                    continue
+                into = target[name]
+                if into:
+                    dest = groups_by_name.get(into) or mesh.vertex_groups.new(name=into)
+                    groups_by_name[into] = dest
+                    for v in mesh.data.vertices:
+                        for g in v.groups:
+                            if g.group == source.index and g.weight > 0:
+                                dest.add([v.index], g.weight, "ADD")
+                mesh.vertex_groups.remove(source)
+        # Delete the bones; children of a removed bone move up to the kept ancestor.
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="EDIT")
+        edit = arm.data.edit_bones
+        for name in drop:
+            bone = edit.get(name)
+            if bone is None:
+                continue
+            parent = edit.get(target[name]) if target[name] else None
+            for child in list(bone.children):
+                child.parent = parent
+            edit.remove(bone)
+            removed += 1
+        bpy.ops.object.mode_set(mode="OBJECT")
+        # Clips must not key bones that no longer exist.
+        for action in bpy.data.actions:
+            for curve in list(getattr(action, "fcurves", []) or []):
+                if any(f'pose.bones["{n}"]' in curve.data_path for n in drop):
+                    action.fcurves.remove(curve)
+    if not removed:
+        raise ValueError("No bones matched; the rig is already simple.")
+    return removed
+
+
 def export_glb(path):
     bpy.ops.export_scene.gltf(
         filepath=path,
@@ -412,6 +486,8 @@ def run(source, target, recipe):
         normalize(objects, int(recipe["triangleBudget"]))
     elif kind == "merge-clips":
         merge_clips(objects, recipe["sources"])
+    elif kind == "simplify-rig":
+        simplify_rig(objects, [g for g in recipe["drop"] if g in DROP_PATTERNS])
     else:
         root = make_root(objects)
         if kind == "object-preset":

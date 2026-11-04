@@ -6,6 +6,8 @@
 // apart from the job store and the credit ledger, both behind interfaces (memory now, Supabase
 // private.reserve_job / finish_job once hosted).
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import {
   MotionJobRequest,
   TRIPO_MODEL,
@@ -17,7 +19,7 @@ import {
   type MotionOutput,
 } from "../shared/motion";
 import { ApiError } from "./openai";
-import { readMedia, saveModel } from "./media";
+import { readMedia, renameGlbAnimations, saveModel } from "./media";
 import { findBlender, runBlenderLocal } from "./providers/blender-local";
 import { RunpodClient } from "./providers/runpod";
 import { TripoClient, type TripoTask } from "./providers/tripo";
@@ -34,7 +36,10 @@ export interface MotionEnv {
 
 // ---------- storage + credits (interfaces; memory implementations for local dev) ----------
 
-type StepName = "tripo_model" | "tripo_rig" | "tripo_retarget" | "unimate" | "blender";
+type StepName = "tripo_model" | "tripo_rig" | "tripo_retarget" | "simplify" | "unimate" | "blender";
+const isBlenderStep = (n: StepName) => n === "blender" || n === "simplify";
+/** UniMate takes ≤ 71 joints; a Tripo biped has ~78. These groups go before text-to-motion. */
+const SIMPLIFY = { recipe: "simplify-rig", drop: ["fingers", "twist", "face"] } as const;
 interface Step {
   name: StepName;
   ref?: string; // provider task / job id once started
@@ -49,7 +54,7 @@ export interface JobRecord {
   steps: Step[];
   outputs: MotionOutput[];
   /** What later steps need: Tripo task ids and short-lived provider URLs. */
-  ctx: { modelTask?: string; rigTask?: string; modelUrl?: string; rigUrl?: string; uploaded?: string };
+  ctx: { modelTask?: string; rigTask?: string; modelUrl?: string; rigUrl?: string; uploaded?: string; simplified?: string };
   cost: number;
   error?: string;
   createdAt: number;
@@ -76,6 +81,53 @@ export class MemoryJobStore implements JobStore {
   }
   async setKey(userId: string, key: string, id: string) {
     this.keys.set(`${userId}:${key}`, id);
+  }
+  protected all() {
+    return this.jobs.values();
+  }
+  protected keyEntries() {
+    return this.keys.entries();
+  }
+}
+
+/** Dev store that survives Vite restarts (an .env.local edit restarts the server mid-job). */
+export class FileJobStore extends MemoryJobStore {
+  private loaded = false;
+  constructor(private file: string) {
+    super();
+  }
+  private async load() {
+    if (this.loaded) return;
+    this.loaded = true;
+    try {
+      const data = JSON.parse(await readFile(this.file, "utf8")) as { jobs: JobRecord[]; keys: [string, string][] };
+      for (const j of data.jobs) await super.put(j);
+      for (const [k, id] of data.keys) await super.setKey(k.slice(0, k.indexOf(":")), k.slice(k.indexOf(":") + 1), id);
+    } catch {
+      /* first run */
+    }
+  }
+  private async save() {
+    await mkdir(dirname(this.file), { recursive: true });
+    await writeFile(this.file, JSON.stringify({ jobs: [...this.all()], keys: [...this.keyEntries()] }));
+  }
+  async get(id: string) {
+    await this.load();
+    return super.get(id);
+  }
+  async put(job: JobRecord) {
+    await this.load();
+    await super.put(job);
+    await this.save();
+  }
+  async byKey(userId: string, key: string) {
+    await this.load();
+    return super.byKey(userId, key);
+  }
+  async setKey(userId: string, key: string, id: string) {
+    await this.load();
+    await super.setKey(userId, key, id);
+    await this.save();
   }
 }
 
@@ -110,9 +162,19 @@ const STEP_LABEL: Record<StepName, string> = {
   tripo_model: "Generating the model (Tripo)",
   tripo_rig: "Rigging (Tripo)",
   tripo_retarget: "Adding preset clips (Tripo)",
+  simplify: "Simplifying the rig (Blender)",
   unimate: "Generating motion (UniMate)",
   blender: "Animating (Blender)",
 };
+
+/** A worker error is often a Python traceback tail: keep the step name and the exception line. */
+export function workerError(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return text.slice(0, 400);
+  const step = lines[0].match(/^([A-Z][\w ]+ failed):/)?.[1];
+  const cause = [...lines].reverse().find((l) => /^\w+(Error|Exception)\b/.test(l)) ?? lines[lines.length - 1];
+  return (step ? `${step}: ${cause}` : cause).slice(0, 400);
+}
 
 function planSteps(job: MotionJob): StepName[] {
   switch (job.kind) {
@@ -121,7 +183,7 @@ function planSteps(job: MotionJob): StepName[] {
     case "tripo_rig":
       return ["tripo_rig", ...(job.presets.length ? (["tripo_retarget"] as const) : [])];
     case "unimate_motion":
-      return ["unimate"];
+      return job.simplifyRig ? ["simplify", "unimate"] : ["unimate"];
     case "blender_motion":
       return ["blender"];
   }
@@ -189,7 +251,7 @@ export class MotionJobs {
     if (kinds.some((k) => k.startsWith("tripo")) && !this.env.TRIPO_API_KEY) throw new ApiError(503, "Set TRIPO_API_KEY in .env.local to use Tripo.");
     if (kinds.includes("unimate") && !(this.env.RUNPOD_API_KEY && this.env.RUNPOD_UNIMATE_ENDPOINT_ID))
       throw new ApiError(503, "Text-to-motion runs on RunPod: set RUNPOD_API_KEY and RUNPOD_UNIMATE_ENDPOINT_ID.");
-    if (kinds.includes("blender") && !(this.env.RUNPOD_API_KEY && this.env.RUNPOD_BLENDER_ENDPOINT_ID) && !findBlender(this.env.BLENDER_PATH))
+    if (kinds.some(isBlenderStep) && !(this.env.RUNPOD_API_KEY && this.env.RUNPOD_BLENDER_ENDPOINT_ID) && !findBlender(this.env.BLENDER_PATH))
       throw new ApiError(503, "Object motion needs RUNPOD_BLENDER_ENDPOINT_ID, or Blender installed locally (BLENDER_PATH).");
   }
 
@@ -212,7 +274,7 @@ export class MotionJobs {
     if (!record || record.userId !== userId) throw new ApiError(404, "No such job");
     if (record.status === "queued" || record.status === "running") {
       const step = record.steps.find((s) => !s.done);
-      if (step?.ref && (step.name === "unimate" || (step.name === "blender" && this.env.RUNPOD_BLENDER_ENDPOINT_ID))) {
+      if (step?.ref && (step.name === "unimate" || (isBlenderStep(step.name) && this.env.RUNPOD_BLENDER_ENDPOINT_ID))) {
         const endpoint = step.name === "unimate" ? this.env.RUNPOD_UNIMATE_ENDPOINT_ID! : this.env.RUNPOD_BLENDER_ENDPOINT_ID!;
         await this.runpod().cancel(endpoint, step.ref).catch(() => undefined);
       }
@@ -281,12 +343,12 @@ export class MotionJobs {
       }
       case "tripo_retarget": {
         if (job.kind !== "tripo_character" && job.kind !== "tripo_rig") throw new Error("bad plan");
-        return this.tripo().retarget(r.ctx.rigTask!, job.presets);
+        return this.tripo().retarget(r.ctx.rigTask!, job.presets, job.inPlace);
       }
       case "unimate": {
         if (job.kind !== "unimate_motion") throw new Error("bad plan");
         const input = {
-          ...(await this.workerModel(job.model)),
+          ...(await this.workerModel(r.ctx.simplified ?? job.model)),
           prompts: job.prompts,
           num_repetitions: job.takes,
           cfg_scale: job.cfgScale,
@@ -294,31 +356,39 @@ export class MotionJobs {
         };
         return this.runpod().run(this.env.RUNPOD_UNIMATE_ENDPOINT_ID!, input, { executionTimeout: 20 * 60_000, ttl: 60 * 60_000 });
       }
+      case "simplify": {
+        if (job.kind !== "unimate_motion") throw new Error("bad plan");
+        return this.startBlender(job.model, { ...SIMPLIFY, drop: [...SIMPLIFY.drop] }, []);
+      }
       case "blender": {
         if (job.kind !== "blender_motion") throw new Error("bad plan");
-        if (this.env.RUNPOD_API_KEY && this.env.RUNPOD_BLENDER_ENDPOINT_ID) {
-          const sources = await Promise.all(
-            job.sources.map(async (s) => {
-              const m = await this.workerModel(s.model);
-              if (!("model_url" in m)) throw new ApiError(400, "Clip sources must be HTTPS links on RunPod until hosted storage exists.");
-              return { url: m.model_url, name: s.name };
-            }),
-          );
-          return this.runpod().run(this.env.RUNPOD_BLENDER_ENDPOINT_ID, { ...(await this.workerModel(job.model)), recipe: job.recipe, sources }, { executionTimeout: 10 * 60_000, ttl: 30 * 60_000 });
-        }
-        const blender = findBlender(this.env.BLENDER_PATH)!;
-        const model = await this.bytes(job.model);
-        const sources = await Promise.all(job.sources.map(async (s) => ({ bytes: await this.bytes(s.model), name: s.name })));
-        const ref = `local-${randomUUID()}`;
-        const run = runBlenderLocal(blender, model, job.recipe, sources);
-        this.local.set(ref, run);
-        run.then(
-          (v) => this.localDone.set(ref, v),
-          (e) => this.localDone.set(ref, e instanceof Error ? e : new Error(String(e))),
-        );
-        return ref;
+        return this.startBlender(job.model, job.recipe, job.sources);
       }
     }
+  }
+
+  private async startBlender(modelRef: string, recipe: Record<string, unknown>, sourceRefs: { model: string; name?: string }[]): Promise<string> {
+    if (this.env.RUNPOD_API_KEY && this.env.RUNPOD_BLENDER_ENDPOINT_ID) {
+      const sources = await Promise.all(
+        sourceRefs.map(async (s) => {
+          const m = await this.workerModel(s.model);
+          if (!("model_url" in m)) throw new ApiError(400, "Clip sources must be HTTPS links on RunPod until hosted storage exists.");
+          return { url: m.model_url, name: s.name };
+        }),
+      );
+      return this.runpod().run(this.env.RUNPOD_BLENDER_ENDPOINT_ID, { ...(await this.workerModel(modelRef)), recipe, sources }, { executionTimeout: 10 * 60_000, ttl: 30 * 60_000 });
+    }
+    const blender = findBlender(this.env.BLENDER_PATH)!;
+    const model = await this.bytes(modelRef);
+    const sources = await Promise.all(sourceRefs.map(async (s) => ({ bytes: await this.bytes(s.model), name: s.name })));
+    const ref = `local-${randomUUID()}`;
+    const run = runBlenderLocal(blender, model, recipe, sources);
+    this.local.set(ref, run);
+    run.then(
+      (v) => this.localDone.set(ref, v),
+      (e) => this.localDone.set(ref, e instanceof Error ? e : new Error(String(e))),
+    );
+    return ref;
   }
 
   /** How a RunPod worker receives a model: a public URL, or the bytes for small local files. */
@@ -341,7 +411,7 @@ export class MotionJobs {
 
   private async check(r: JobRecord, step: Step) {
     if (step.name.startsWith("tripo")) return this.checkTripo(r, step, await this.tripo().getTask(step.ref!));
-    if (step.name === "blender" && step.ref!.startsWith("local-")) {
+    if (isBlenderStep(step.name) && step.ref!.startsWith("local-")) {
       const result = this.localDone.get(step.ref!);
       if (!result) {
         if (!this.local.has(step.ref!)) throw new ApiError(500, "The local Blender run was lost (server restarted). Try again.");
@@ -350,7 +420,10 @@ export class MotionJobs {
       }
       this.local.delete(step.ref!);
       this.localDone.delete(step.ref!);
-      if (result instanceof Error) throw result instanceof ApiError ? result : new ApiError(500, result.message);
+      if (result instanceof Error) {
+        if (step.name === "simplify" && /already simple/.test(result.message)) return void (step.done = true);
+        throw result instanceof ApiError ? result : new ApiError(500, result.message);
+      }
       return this.finishBlender(r, step, result.glb, result.clips);
     }
     const endpoint = step.name === "unimate" ? this.env.RUNPOD_UNIMATE_ENDPOINT_ID! : this.env.RUNPOD_BLENDER_ENDPOINT_ID!;
@@ -361,15 +434,18 @@ export class MotionJobs {
     }>(endpoint, step.ref!);
     if (res.status === "IN_QUEUE") return void (step.progress = 5);
     if (res.status === "IN_PROGRESS") return void (step.progress = Math.min(90, Math.max(20, step.progress + 8)));
-    if (res.status !== "COMPLETED") throw new ApiError(502, res.error ? `Worker failed: ${res.error.slice(0, 400)}` : `Worker ${res.status.toLowerCase()}`);
-    if (step.name === "blender") {
+    if (step.name === "simplify" && res.status === "FAILED" && /already simple/.test(res.error ?? "")) return void (step.done = true);
+    if (res.status !== "COMPLETED") throw new ApiError(502, res.error ? `Worker failed: ${workerError(res.error)}` : `Worker ${res.status.toLowerCase()}`);
+    if (isBlenderStep(step.name)) {
       if (!res.output?.glb_b64) throw new ApiError(502, "The Blender worker returned no model.");
       return this.finishBlender(r, step, Buffer.from(res.output.glb_b64, "base64"), res.output.clips ?? []);
     }
     for (const m of res.output?.motions ?? []) {
       if (!m.glb_b64) continue;
-      const saved = await saveModel(Buffer.from(m.glb_b64, "base64"), this.env);
-      r.outputs.push({ url: saved.url, role: "motion", prompt: m.prompt, clips: [`${m.prompt.replace(/^An object /i, "").replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 50)} ${m.take}`.trim()] });
+      // UniMate names every clip "Reconstructed_Action"; name it after the prompt so scenes can find it.
+      const clip = `${m.prompt.replace(/^An object /i, "").replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 50)} ${m.take}`.trim();
+      const saved = await saveModel(renameGlbAnimations(new Uint8Array(Buffer.from(m.glb_b64, "base64")), [clip]), this.env);
+      r.outputs.push({ url: saved.url, role: "motion", prompt: m.prompt, clips: [clip] });
     }
     if (!r.outputs.some((o) => o.role === "motion")) throw new ApiError(502, "UniMate returned no motions.");
     step.done = true;
@@ -377,6 +453,8 @@ export class MotionJobs {
 
   private async finishBlender(r: JobRecord, step: Step, glb: Uint8Array, clips: string[]) {
     const saved = await saveModel(glb, this.env);
+    step.done = true;
+    if (step.name === "simplify") return void (r.ctx.simplified = saved.url);
     r.outputs.push({ url: saved.url, role: "animated", clips });
     step.done = true;
   }

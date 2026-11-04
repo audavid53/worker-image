@@ -6,7 +6,7 @@ The app animates Casting models for the three.js scenes with three providers:
 |---|---|---|---|
 | **Tripo** | text/image → model → rig → preset clips (idle, walk, run, jump …) | Tripo API | `tripo_character`, `tripo_rig` |
 | **UniMate** | text → motion for **any** rigged skeleton (characters, animals, robots) | `workers/unimate`, GPU endpoint | `unimate_motion` |
-| **Blender** | preset or custom keyframed **object** motion, decimation, merging a rig's clips into one GLB | `workers/blender`, CPU endpoint (or local Blender in dev) | `blender_motion` |
+| **Blender** | preset or custom keyframed **object** motion, decimation, merging a rig's clips into one GLB, simplifying rigs for UniMate | `workers/blender`, CPU endpoint (or local Blender in dev) | `blender_motion` |
 
 Requests are data checked by `shared/motion.ts`, then checked again by each worker. No request carries code.
 
@@ -28,8 +28,14 @@ Requests are data checked by `shared/motion.ts`, then checked again by each work
 
 | Endpoint | Hardware | Workers | Notes |
 |---|---|---|---|
-| `aesyr-blender` | CPU `cpu3c`, 2 vCPU / 4 GB | 0 → 3 | Blender 4.5 LTS. Object clips take seconds. |
-| `aesyr-unimate` | GPU 16 GB pool: A4000 / RTX 2000 Ada / RTX 4000 Ada / A4500 | 0 → 2 | CUDA 12.4. Checkpoint and flan-t5 are baked into the image, so cold starts download nothing. |
+| `aesyr-blender-cpu` | CPU `cpu3c-2-4` (2 vCPU / 4 GB) | 0 → 3 | Blender 4.5 LTS. A clip runs in under 1 s; a cold start takes about 40 s. |
+| `aesyr-unimate` | GPU: the 16 GB pool first (A4000 / RTX 2000 Ada / RTX 4000 Ada / A4500), then the 24 GB pool (RTX 3090 / L4 / A5000) when 16 GB is out of stock | 0 → 2 | Minimum CUDA 12.4. The checkpoint and flan-t5 are baked into the image. |
+
+**RunPod gotchas (seen 2026-11-04):**
+- REST `computeType: "CPU"` is silently ignored: it creates a GPU endpoint. The script pins CPU through GraphQL `saveEndpoint` (`instanceIds`).
+- An explicit `allowedCudaVersions` list stopped any GPU worker from ever being scheduled. The script uses `minCudaVersion` instead.
+- The 16 GB pool is often out of stock, hence the 24 GB fallback.
+- UniMate's torch 2.5.1 (CUDA 12.4) has no **Blackwell** kernels. RunPod's 24 GB pool includes an RTX PRO 6000 Blackwell MIG slice, which fails with "no kernel image is available", so the script excludes Blackwell types. Workers that are already placed keep their GPU: after changing pools, set `workersMax` to 0 and then back.
 
 ## Deploy
 
@@ -49,9 +55,15 @@ Requests are data checked by `shared/motion.ts`, then checked again by each work
 - **Prompts.** Prompts work best in the training style: "An object waves its right hand." The worker adds "An object" when it is missing.
 - **Clip length.** Each clip is 60 frames, and an early model fails often. Ask for 2–3 takes (`takes`) and keep the best.
 - **Your rig.**
+  - UniMate takes **≤ 71 joints**. A Tripo biped has 77, 30 of them fingers. Each `unimate_motion` job therefore first runs the Blender `simplify-rig` recipe (`simplifyRig`, on by default). It drops fingers, limb twist/helper bones and face bones, and folds their skin weights into the nearest kept bone, which takes a Tripo biped to 25 joints. A rig that is already simple skips this step.
   - `rig_preprocess` labels the joints. It uses the offline rules unless you deploy with `--with-openai-key`, which copies `OPENAI_API_KEY` to the endpoint so an OpenAI model labels them.
-  - A rig must have **≤ 71 joints**. Tripo rigs fit.
   - Use `faceRight` / `faceLeft` (raw bone names) when a character faces the wrong way.
+- **Output.** Each motion GLB is the *canonical* rig: centred, facing +Z and scaled to UniMate's frame (about 2.3 units tall), not the source model's size. Scale it in the scene. The app renames each clip from `Reconstructed_Action` to its prompt ("waves its right hand 1").
+- **First live test (2026-11-04, Tripo robot, 25 joints after simplify):**
+  - "jumps up and down" gave a clear crouch–launch–land.
+  - "waves its right hand" came out almost static (≤ 3 cm of movement).
+  - Expect misses: use `takes: 2–3` and raise `cfgScale` to 5–7 when a prompt is ignored.
+- **Timing.** About 5 minutes for a cold start with a new image pull; about 10 s per job when warm.
 - **Rig cache.** The prepared rig is cached by the GLB's hash. Mount a network volume on the endpoint so the cache survives between workers. This is optional.
 
 ## Local development

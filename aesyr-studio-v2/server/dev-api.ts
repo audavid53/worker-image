@@ -9,7 +9,7 @@ import { generateCode3D, generateImage, generateScript } from "./casting";
 import { ApiError, type ProviderEnv } from "./openai";
 import { generateStory } from "./story";
 import { MAX_AUDIO_BYTES, saveAudio } from "./media";
-import { MotionJobs, type MotionEnv } from "./jobs";
+import { FileJobStore, MotionJobs, type MotionEnv } from "./jobs";
 
 /** Local dev has no sign-in yet; every request is this user (milestone 12 uses the Supabase session). */
 const DEV_USER = "local-dev";
@@ -74,7 +74,7 @@ const MEDIA_TYPES: Record<string, string> = {
 
 export function devApi(env: ProviderEnv & MotionEnv): Plugin {
   const mediaDir = env.MEDIA_DIR ?? ".local-media";
-  const jobs = new MotionJobs({ env });
+  const jobs = new MotionJobs({ env, store: new FileJobStore(join(mediaDir, "jobs.json")) });
   return {
     name: "aesyr-dev-api",
     configureServer(server) {

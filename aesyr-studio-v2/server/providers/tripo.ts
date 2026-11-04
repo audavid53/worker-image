@@ -59,9 +59,9 @@ export class TripoClient {
     return this.task("/animations/rig", { input, model: opts.model, rig_type: opts.rigType, out_format: "glb" });
   }
   /** input: the rig task id. Presets are sent as "preset:<name>". */
-  retarget(rigTaskId: string, presets: string[]) {
+  retarget(rigTaskId: string, presets: string[], inPlace = false) {
     const ids = presets.map((p) => `preset:${p}`);
-    return this.task("/animations/retarget", { input: rigTaskId, ...(ids.length === 1 ? { animation: ids[0] } : { animations: ids }), out_format: "glb" });
+    return this.task("/animations/retarget", { input: rigTaskId, ...(ids.length === 1 ? { animation: ids[0] } : { animations: ids }), out_format: "glb", animate_in_place: inPlace });
   }
 
   async upload(bytes: Uint8Array, filename: string, type: string): Promise<string> {

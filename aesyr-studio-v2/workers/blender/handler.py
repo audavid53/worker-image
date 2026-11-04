@@ -2,7 +2,7 @@
 
 Job input (validated again here; the app validates it first with shared/motion.ts):
     {
-      "recipe": {...},                    # object-preset | keyframes | normalize | merge-clips
+      "recipe": {...},                    # object-preset | keyframes | normalize | merge-clips | simplify-rig
       "model_url": "https://...glb",      # the model to animate (or "model_b64")
       "sources": [{"url": "...", "name": "walk"}],   # merge-clips only: GLBs of the same rig
       "upload_url": "https://...signed PUT"           # optional; else the GLB comes back as base64
@@ -25,7 +25,7 @@ BLENDER = os.environ.get("BLENDER_BIN", "blender")
 TIMEOUT = int(os.environ.get("RECIPE_TIMEOUT", "600"))
 MAX_DOWNLOAD = 150 * 1024 * 1024  # Tripo's own model limit
 MAX_INLINE = 9 * 1024 * 1024  # RunPod job output must stay under ~10 MB; larger needs upload_url
-RECIPES = {"object-preset", "keyframes", "normalize", "merge-clips"}
+RECIPES = {"object-preset", "keyframes", "normalize", "merge-clips", "simplify-rig"}
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 

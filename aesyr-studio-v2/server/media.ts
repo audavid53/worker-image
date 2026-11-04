@@ -62,3 +62,33 @@ export async function readMedia(url: string, env: ProviderEnv): Promise<Uint8Arr
     throw new ApiError(404, "That model is no longer stored");
   }
 }
+
+/** Renames a GLB's animations in place (JSON chunk only; the binary chunk is copied unchanged). */
+export function renameGlbAnimations(glb: Uint8Array, names: string[]): Uint8Array {
+  if (!isGlb(glb)) return glb;
+  const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
+  const jsonLen = view.getUint32(12, true);
+  if (view.getUint32(16, true) !== 0x4e4f534a) return glb; // first chunk must be JSON
+  let json;
+  try {
+    json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLen)));
+  } catch {
+    return glb; // not ours to fix: keep the file as the worker sent it
+  }
+  (json.animations ?? []).forEach((a: { name?: string }, i: number) => {
+    if (names[i]) a.name = names[i];
+  });
+  let text = new TextEncoder().encode(JSON.stringify(json));
+  const pad = (4 - (text.length % 4)) % 4;
+  if (pad) text = new Uint8Array([...text, ...new Array(pad).fill(0x20)]);
+  const rest = glb.subarray(20 + jsonLen);
+  const out = new Uint8Array(20 + text.length + rest.length);
+  const o = new DataView(out.buffer);
+  out.set(glb.subarray(0, 8), 0);
+  o.setUint32(8, out.length, true);
+  o.setUint32(12, text.length, true);
+  o.setUint32(16, 0x4e4f534a, true);
+  out.set(text, 20);
+  out.set(rest, 20 + text.length);
+  return out;
+}

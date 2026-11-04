@@ -85,6 +85,8 @@ export const blenderRecipeSchema = z.discriminatedUnion("recipe", [
     }),
   z.object({ recipe: z.literal("normalize"), triangleBudget: z.number().int().min(1000).max(200_000) }).strict(),
   z.object({ recipe: z.literal("merge-clips") }).strict(),
+  // Drop finger / limb-twist / face bones, folding their skin weights into the kept parent.
+  z.object({ recipe: z.literal("simplify-rig"), drop: z.array(z.enum(["fingers", "twist", "face"])).min(1).max(3) }).strict(),
 ]);
 export type BlenderRecipe = z.infer<typeof blenderRecipeSchema>;
 
@@ -124,6 +126,8 @@ export const MotionJobRequest = z.discriminatedUnion("kind", [
       imageUrl: z.string().trim().max(2000).regex(/^(https:\/\/\S+|\/media\/[0-9a-f-]{36}\.(png|jpg|webp))$/).optional(),
       rigType: z.enum(RIG_TYPES).default("biped"),
       presets: z.array(z.string()).max(MAX_TRIPO_PRESETS).default(["idle", "walk", "run"]),
+      /** Clips play on the spot (no root travel); the timeline moves the character instead. */
+      inPlace: z.boolean().default(false),
       faceLimit: z.number().int().min(2000).max(200_000).default(30_000), // web-friendly
     })
     .strict()
@@ -138,6 +142,7 @@ export const MotionJobRequest = z.discriminatedUnion("kind", [
       model: modelRef,
       rigType: z.enum(RIG_TYPES).default("biped"),
       presets: z.array(z.string()).max(MAX_TRIPO_PRESETS).default([]),
+      inPlace: z.boolean().default(false),
     })
     .strict()
     .superRefine((r, ctx) => presetsFor(r.rigType, r.presets, ctx)),
@@ -149,6 +154,8 @@ export const MotionJobRequest = z.discriminatedUnion("kind", [
       prompts: z.array(z.string().trim().min(3).max(200)).min(1).max(6),
       takes: z.number().int().min(1).max(3).default(1),
       cfgScale: n(1, 9).default(3),
+      /** Run Blender simplify-rig first (UniMate takes ≤ 71 joints; Tripo bipeds have ~78). */
+      simplifyRig: z.boolean().default(true),
       faceRight: z.string().regex(/^[\w .:|-]{1,80}$/).optional(),
       faceLeft: z.string().regex(/^[\w .:|-]{1,80}$/).optional(),
     })
@@ -188,7 +195,7 @@ export function estimateCost(job: MotionJob): number {
     case "tripo_rig":
       return MOTION_COST.tripo_rig + (job.presets.length ? MOTION_COST.tripo_retarget : 0);
     case "unimate_motion":
-      return MOTION_COST.unimate_take * job.prompts.length * job.takes;
+      return MOTION_COST.unimate_take * job.prompts.length * job.takes + (job.simplifyRig ? MOTION_COST.blender_recipe : 0);
     case "blender_motion":
       return MOTION_COST.blender_recipe;
   }

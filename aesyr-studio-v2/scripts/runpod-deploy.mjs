@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Creates or updates the two RunPod Serverless endpoints at the cheapest settings that work:
-//   aesyr-blender  CPU  cpu3c, 2 vCPU / 4 GB   0 → 3 workers
-//   aesyr-unimate  GPU  16 GB tier (A4000 / RTX 2000 Ada / RTX 4000 Ada / A4500), 0 → 2 workers
+//   aesyr-blender-cpu  CPU  cpu3c-2-4 (2 vCPU / 4 GB)   0 → 3 workers
+//   aesyr-unimate      GPU  16 GB tier first (A4000 / RTX 2000 Ada / RTX 4000 Ada / A4500), then the
+//                           24 GB tier (RTX 3090 / L4 / A5000) when 16 GB is out of stock; 0 → 2 workers
 // Both scale to zero (workersMin 0, idle 5 s, FlashBoot on): nothing is billed while idle.
 //
 //   node scripts/runpod-deploy.mjs --blender-image ghcr.io/<owner>/aesyr-blender-worker:<tag> \
@@ -31,10 +32,10 @@ const WORKERS = [
     image: args["blender-image"],
     template: { name: "aesyr-blender", category: "CPU", containerDiskInGb: 10, env: { RECIPE_TIMEOUT: "600" } },
     endpoint: {
-      name: "aesyr-blender",
-      computeType: "CPU",
-      cpuFlavorIds: ["cpu3c"],
-      vcpuCount: 2,
+      name: "aesyr-blender-cpu",
+      // REST v1 silently ignores computeType "CPU" and makes a GPU endpoint; CPU is pinned
+      // afterwards through GraphQL saveEndpoint (instanceIds + empty gpuIds).
+      cpuInstance: "cpu3c-2-4",
       workersMin: 0,
       workersMax: 3,
       idleTimeout: 5,
@@ -57,10 +58,19 @@ const WORKERS = [
     },
     endpoint: {
       name: "aesyr-unimate",
-      computeType: "GPU",
-      gpuTypeIds: ["NVIDIA RTX A4000", "NVIDIA RTX 2000 Ada Generation", "NVIDIA RTX 4000 Ada Generation", "NVIDIA RTX A4500"],
+      gpuTypeIds: [
+        "NVIDIA RTX A4000", "NVIDIA RTX 2000 Ada Generation", "NVIDIA RTX 4000 Ada Generation", "NVIDIA RTX A4500",
+        "NVIDIA GeForce RTX 3090", "NVIDIA L4", "NVIDIA RTX A5000",
+      ],
       gpuCount: 1,
-      allowedCudaVersions: ["12.4", "12.5", "12.6", "12.7", "12.8", "12.9", "13.0"],
+      // UniMate pins torch 2.5.1 (CUDA 12.4), which has no Blackwell kernels ("no kernel image is
+      // available"). RunPod's 24 GB pool includes an RTX PRO 6000 Blackwell MIG slice, so the pools
+      // are re-saved through GraphQL with every Blackwell type in them excluded.
+      gpuPools: ["AMPERE_16", "AMPERE_24"],
+      // The image is CUDA 12.4. Use a minimum, not allowedCudaVersions: an explicit version list
+      // left the endpoint with no schedulable worker at all (seen 2026-11-04).
+      allowedCudaVersions: [],
+      minCudaVersion: "12.4",
       workersMin: 0,
       workersMax: 2,
       idleTimeout: 5,
@@ -88,6 +98,42 @@ async function call(method, path, body) {
   return text ? JSON.parse(text) : {};
 }
 
+async function gql(query, variables) {
+  const res = await fetch("https://api.runpod.io/graphql", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RUNPOD_API_KEY}`, "content-type": "application/json", "user-agent": "Mozilla/5.0" },
+    body: JSON.stringify({ query, variables }),
+  });
+  return res.json();
+}
+
+async function excludeBlackwell(id, e, pools) {
+  let exclude = (await gql("query { gpuTypes { id } }")).data.gpuTypes.map((g) => g.id).filter((t) => /Blackwell|RTX 50d0|B200|B300/.test(t));
+  for (let i = 0; i < 30; i++) {
+    const input = { id, name: e.name, templateId: e.templateId, gpuIds: [...pools, ...exclude.map((x) => `-${x}`)].join(","), workersMin: e.workersMin, workersMax: e.workersMax, idleTimeout: e.idleTimeout, scalerType: e.scalerType, scalerValue: e.scalerValue };
+    if (args["dry-run"]) return console.log("[dry-run] GraphQL saveEndpoint gpuIds", input.gpuIds);
+    const r = await gql("mutation($input:EndpointInput!){saveEndpoint(input:$input){id gpuIds}}", { input });
+    if (r.data) return console.log(`  ${e.name} GPUs: ${r.data.saveEndpoint.gpuIds}`);
+    // Exclusions must belong to a selected pool: drop the one RunPod names and retry.
+    const bad = r.errors?.[0]?.message.match(/Invalid exclusion "-(.+?)"/)?.[1];
+    if (!bad) throw new Error(`Could not set GPU pools for ${e.name}: ${JSON.stringify(r.errors).slice(0, 300)}`);
+    exclude = exclude.filter((x) => x !== bad);
+  }
+}
+
+async function pinCpu(id, e, instance) {
+  const input = { id, name: e.name, templateId: e.templateId, instanceIds: [instance], gpuIds: "", workersMin: e.workersMin, workersMax: e.workersMax, idleTimeout: e.idleTimeout, scalerType: e.scalerType, scalerValue: e.scalerValue };
+  if (args["dry-run"]) return console.log("[dry-run] GraphQL saveEndpoint", JSON.stringify(input));
+  const res = await fetch("https://api.runpod.io/graphql", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RUNPOD_API_KEY}`, "content-type": "application/json", "user-agent": "Mozilla/5.0" },
+    body: JSON.stringify({ query: "mutation($input:EndpointInput!){saveEndpoint(input:$input){id computeType instanceIds}}", variables: { input } }),
+  });
+  const body = await res.json();
+  const saved = body.data?.saveEndpoint;
+  if (saved?.computeType !== "CPU") throw new Error(`Could not pin ${e.name} to CPU: ${JSON.stringify(body.errors ?? body).slice(0, 300)}`);
+}
+
 const templates = await call("GET", "/templates");
 const endpoints = await call("GET", "/endpoints");
 const out = {};
@@ -107,10 +153,13 @@ for (const w of WORKERS) {
   const existingT = (templates ?? []).find((x) => x.name === t.name);
   const template = existingT ? await call("PATCH", `/templates/${existingT.id}`, t) : await call("POST", "/templates", t);
   const templateId = existingT?.id ?? template.id;
-  const e = { ...w.endpoint, templateId };
+  const { cpuInstance, gpuPools, ...rest } = w.endpoint;
+  const e = { ...rest, templateId };
   const existingE = (endpoints ?? []).find((x) => x.name === e.name || x.name?.startsWith(`${e.name} `));
   const endpoint = existingE ? await call("PATCH", `/endpoints/${existingE.id}`, e) : await call("POST", "/endpoints", e);
   out[w.key] = existingE?.id ?? endpoint.id;
+  if (cpuInstance) await pinCpu(out[w.key], e, cpuInstance);
+  if (gpuPools) await excludeBlackwell(out[w.key], e, gpuPools);
   console.log(`${existingE ? "updated" : "created"} ${e.name}: endpoint ${out[w.key]} (template ${templateId})`);
 }
 console.log("\nAdd to .env.local:");

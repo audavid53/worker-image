@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MotionJobs } from "./jobs";
+import { MotionJobs, workerError } from "./jobs";
 import { saveModel } from "./media";
 import { findBlender } from "./providers/blender-local";
 import { estimateCost, MotionJobRequest } from "../shared/motion";
@@ -53,10 +53,11 @@ async function pollUntilDone(jobs: MotionJobs, id: string, max = 20) {
 test("requests: presets must match the rig type; costs add up", () => {
   assert.equal(MotionJobRequest.safeParse({ kind: "tripo_character", prompt: "a fox", rigType: "quadruped", presets: ["walk"] }).success, false);
   const ok = MotionJobRequest.parse({ kind: "tripo_character", prompt: "a robot" });
+  assert.ok(ok.kind === "tripo_character");
   assert.deepEqual(ok.presets, ["idle", "walk", "run"]);
   assert.equal(estimateCost(ok), 30 + 25 + 10);
   const um = MotionJobRequest.parse({ kind: "unimate_motion", model: "https://x.test/a.glb", prompts: ["waves", "jumps"], takes: 2 });
-  assert.equal(estimateCost(um), 4 * 2 * 2);
+  assert.equal(estimateCost(um), 4 * 2 * 2 + 1); // + the rig simplify pass
   assert.equal(MotionJobRequest.safeParse({ kind: "blender_motion", model: "../etc/passwd", recipe: { recipe: "merge-clips" } }).success, false);
   assert.equal(
     MotionJobRequest.safeParse({ kind: "blender_motion", model: "https://x.test/a.glb", recipe: { recipe: "keyframes", name: "k", duration: 1, loop: false, keys: [{ time: 0.5, position: [0, 1, 0] }, { time: 0.2, position: [0, 0, 0] }] } }).success,
@@ -99,7 +100,7 @@ test("tripo character: model → rig → presets, outputs copied locally, credit
     const rig = log.find((l) => l.url.endsWith("/animations/rig"))!.body;
     assert.equal(rig.input, "t-model");
     const retarget = log.find((l) => l.url.endsWith("/animations/retarget"))!.body;
-    assert.deepEqual(retarget, { input: "t-rig", animations: ["preset:idle", "preset:walk"], out_format: "glb" });
+    assert.deepEqual(retarget, { input: "t-rig", animations: ["preset:idle", "preset:walk"], out_format: "glb", animate_in_place: false });
     assert.equal(await jobs.ledger.balance("u1"), 1000 - created.cost); // charged, not refunded
   });
 });
@@ -136,7 +137,7 @@ test("unimate on RunPod: small local model goes inline; one output per motion", 
     );
     const jobs = new MotionJobs({ env: { RUNPOD_API_KEY: "k", RUNPOD_UNIMATE_ENDPOINT_ID: "ep-uni", MEDIA_DIR: dir }, fetchImpl });
     const model = (await saveModel(GLB, { MEDIA_DIR: dir })).url;
-    const created = await jobs.create("u1", { kind: "unimate_motion", model, prompts: ["waves", "jumps"] });
+    const created = await jobs.create("u1", { kind: "unimate_motion", model, prompts: ["waves", "jumps"], simplifyRig: false });
     const done = await pollUntilDone(jobs, created.id);
     assert.equal(done.status, "succeeded", done.error);
     assert.deepEqual(done.outputs.map((o) => o.prompt), ["An object waves.", "An object jumps."]);
@@ -157,7 +158,7 @@ test("worker-reported error fails the job and refunds", async () => {
       [],
     );
     const jobs = new MotionJobs({ env: { RUNPOD_API_KEY: "k", RUNPOD_UNIMATE_ENDPOINT_ID: "ep", MEDIA_DIR: dir }, fetchImpl });
-    const created = await jobs.create("u1", { kind: "unimate_motion", model: "https://x.test/r.glb", prompts: ["walks forward"] });
+    const created = await jobs.create("u1", { kind: "unimate_motion", model: "https://x.test/r.glb", prompts: ["walks forward"], simplifyRig: false });
     const done = await pollUntilDone(jobs, created.id);
     assert.equal(done.status, "failed");
     assert.match(done.error!, /120 joints/);
@@ -196,4 +197,59 @@ test("local Blender: object preset on a real model (skipped without Blender)", {
     assert.equal(v.status, "succeeded", v.error);
     assert.deepEqual(v.outputs[0].clips, ["Spin"]);
   });
+});
+
+test("unimate: Blender simplifies the rig first and UniMate gets the simplified model", async () => {
+  await withMedia(async (dir) => {
+    const log: { url: string; body?: any }[] = [];
+    const simplified = new Uint8Array(GLB);
+    simplified[GLB.length - 1] = 0x21; // a different (still valid) GLB, to tell them apart
+    const sB64 = Buffer.from(simplified).toString("base64");
+    const fetchImpl = fakeFetch(
+      [
+        [/ep-bl\/run$/, () => ({ id: "bl-1" })],
+        [/ep-bl\/status\/bl-1$/, () => ({ status: "COMPLETED", output: { clips: [], bytes: simplified.length, glb_b64: sB64 } })],
+        [/ep-uni\/run$/, () => ({ id: "rp-9" })],
+        [/ep-uni\/status\/rp-9$/, () => ({ status: "COMPLETED", output: { motions: [{ prompt: "An object waves.", take: 1, glb_b64: sB64 }] } })],
+      ],
+      log,
+    );
+    const env = { RUNPOD_API_KEY: "k", RUNPOD_BLENDER_ENDPOINT_ID: "ep-bl", RUNPOD_UNIMATE_ENDPOINT_ID: "ep-uni", MEDIA_DIR: dir };
+    const jobs = new MotionJobs({ env, fetchImpl });
+    const model = (await saveModel(GLB, { MEDIA_DIR: dir })).url;
+    const created = await jobs.create("u1", { kind: "unimate_motion", model, prompts: ["waves"] });
+    assert.equal(created.step, "Simplifying the rig (Blender)");
+    const done = await pollUntilDone(jobs, created.id);
+    assert.equal(done.status, "succeeded", done.error);
+    assert.deepEqual(log.find((l) => l.url.endsWith("ep-bl/run"))!.body.input.recipe, { recipe: "simplify-rig", drop: ["fingers", "twist", "face"] });
+    assert.equal(log.find((l) => l.url.endsWith("ep-uni/run"))!.body.input.model_b64, sB64);
+    assert.deepEqual(done.outputs.map((o) => o.role), ["motion"]); // the simplified rig is an intermediate, not an output
+  });
+});
+
+test("unimate: an already-simple rig skips the simplify step", async () => {
+  await withMedia(async (dir) => {
+    const log: { url: string; body?: any }[] = [];
+    const b64 = Buffer.from(GLB).toString("base64");
+    const fetchImpl = fakeFetch(
+      [
+        [/ep-bl\/run$/, () => ({ id: "bl-2" })],
+        [/ep-bl\/status\/bl-2$/, () => ({ status: "COMPLETED", output: { error: "No bones matched; the rig is already simple." } })],
+        [/ep-uni\/run$/, () => ({ id: "rp-3" })],
+        [/ep-uni\/status\/rp-3$/, () => ({ status: "COMPLETED", output: { motions: [{ prompt: "An object walks.", take: 1, glb_b64: b64 }] } })],
+      ],
+      log,
+    );
+    const jobs = new MotionJobs({ env: { RUNPOD_API_KEY: "k", RUNPOD_BLENDER_ENDPOINT_ID: "ep-bl", RUNPOD_UNIMATE_ENDPOINT_ID: "ep-uni", MEDIA_DIR: dir }, fetchImpl });
+    const model = (await saveModel(GLB, { MEDIA_DIR: dir })).url;
+    const done = await pollUntilDone(jobs, (await jobs.create("u1", { kind: "unimate_motion", model, prompts: ["walks"] })).id);
+    assert.equal(done.status, "succeeded", done.error);
+    assert.equal(log.find((l) => l.url.endsWith("ep-uni/run"))!.body.input.model_b64, b64); // the original model
+  });
+});
+
+test("worker errors keep the step and the exception line, not the traceback top", () => {
+  const tail = 'Sampling failed: b/python3.10/torch/module.py", line 1747\n  File "x.py"\nRuntimeError: CUDA error: no kernel image is available for execution on the device\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\n';
+  assert.equal(workerError(tail), "Sampling failed: RuntimeError: CUDA error: no kernel image is available for execution on the device");
+  assert.equal(workerError("The rig has 77 joints"), "The rig has 77 joints");
 });
