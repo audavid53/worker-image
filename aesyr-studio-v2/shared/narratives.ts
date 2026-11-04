@@ -100,6 +100,36 @@ const BUILTINS: z.input<typeof NarrativeStructure>[] = [
     global_rules: ["Never narrate what the viewer already sees.", "Jokes are real, researched facts."],
     evidence: { report_md: "Beat formula from claude-animated-shorts SKILL.md (\"The Bridge That Fell for a Song\")." },
   },
+  {
+    // Shares measured from a 90 s product-launch film (references/product-explainer-study).
+    id: "character-product-explainer",
+    name: "Character product explainer",
+    blurb: "A cast of mascot 'teammates' shows what your product does: type, UI demos, proof, CTA.",
+    runtime: { min_s: 45, max_s: 150, default_s: 90 },
+    beats: [
+      { key: "hook", act: "Open", name: "Aspiration hook", purpose: "What the viewer wants, word by word (\"You have…\").", share: 0.083, rules: ["One word per beat; one coloured keyword per line."], default_shot_bias: { sizes: ["ECU", "WS"], moves: ["Static", "Pull out"] } },
+      { key: "need", act: "Open", name: "The need", purpose: "The gap in one short line.", share: 0.011, default_shot_bias: { sizes: ["WS"], moves: ["Static"] } },
+      { key: "reveal", act: "Open", name: "Brand reveal", purpose: "Logo on the music drop, revealed by a mascot passing through frame.", share: 0.017, default_shot_bias: { sizes: ["ECU", "WS"], moves: ["Pull out"] } },
+      { key: "promise", act: "Open", name: "Promise + cast", purpose: "The one-line promise over the cast.", share: 0.022, default_shot_bias: { sizes: ["WS"], moves: ["Static"] } },
+      { key: "demo-1", act: "Show", name: "Demo: ask → agent does it", purpose: "The user types a request; an agent cursor does the job; a concrete result appears.", share: 0.128, rules: ["Ask → act → result."], default_shot_bias: { sizes: ["ECU", "CU", "WS"], moves: ["Pull out", "Push in", "Zoom"] } },
+      { key: "character", act: "Show", name: "Character moment", purpose: "A mascot introduces itself with a gesture and a speech bubble.", share: 0.061, default_shot_bias: { sizes: ["MS", "MCU"], moves: ["Static"] } },
+      { key: "capabilities", act: "Show", name: "Capability list", purpose: "What the team can do, as a rolling list.", share: 0.078, default_shot_bias: { sizes: ["WS"], moves: ["Static"] } },
+      { key: "where", act: "Show", name: "Where it works", purpose: "The places it lives (tabs, apps, docs).", share: 0.056, default_shot_bias: { sizes: ["WS", "CU"], moves: ["Push in"] } },
+      { key: "demo-2", act: "Show", name: "Demo: agents in an app", purpose: "Several agent cursors build something together inside a familiar app.", share: 0.078, default_shot_bias: { sizes: ["CU", "WS"], moves: ["Pull out", "Static"] } },
+      { key: "demo-3", act: "Show", name: "Demo: second use case", purpose: "A different job end to end, closing on a mascot listing what it already did.", share: 0.122, default_shot_bias: { sizes: ["CU", "MS"], moves: ["Push in", "Static"] } },
+      { key: "team", act: "Scale", name: "Scale to the team", purpose: "Everyone gets one: people become mascot-teammates; shared work organises itself.", share: 0.111, default_shot_bias: { sizes: ["WS", "MS"], moves: ["Pull out", "Zoom"] } },
+      { key: "proof", act: "Scale", name: "Social proof", purpose: "Reach number, testimonials, a growing counter.", share: 0.128, default_shot_bias: { sizes: ["WS", "CU"], moves: ["Pull out", "Pan"] } },
+      { key: "tagline", act: "Close", name: "Tagline + line-up", purpose: "The closing promise over the cast line-up.", share: 0.028, default_shot_bias: { sizes: ["WS"], moves: ["Static"] } },
+      { key: "cta", act: "Close", name: "Call to action", purpose: "The user picks a mascot; end card with logo, CTA and where to get it.", share: 0.077, rules: ["Hold the end card at least 4 s."], default_shot_bias: { sizes: ["WS"], moves: ["Static"] } },
+    ],
+    global_rules: [
+      "The script is on-screen type: one idea per line, at most ~7 words, one coloured keyword per line.",
+      "Colour belongs to the cast, their cursors and keywords; the world stays near-white.",
+      "Every demo is ask → act → result, with a concrete result.",
+      "Scene changes land on music section changes; type lands on beats.",
+    ],
+    evidence: { report_md: "references/product-explainer-study/REPORT.md (derived timings; reference media not stored)." },
+  },
 ];
 
 export const NARRATIVES: NarrativeStructure[] = BUILTINS.map((n) => NarrativeStructure.parse({ ...n, source: "builtin" }));

@@ -72,7 +72,8 @@ export const ScenePreset = z.object({
     drift_pct: z.number().min(0).max(100),
     move_pct: z.number().min(0).max(100),
     glide_frames: range(1, 240),
-    ease: z.enum(["smootherstep", "smoothstep", "easeInOut", "spring", "linear"]),
+    /** expoOut: snap in, settle fast (attack ~2 f, release ~3 f), the UI-explainer feel. */
+    ease: z.enum(["smootherstep", "smoothstep", "easeInOut", "spring", "expoOut", "linear"]),
     /** Faster than this at 720p and a move becomes a cut. */
     peak_px_per_frame_720: z.number().min(1).max(500),
     push_in_pct_per_frame: range(0, 5),

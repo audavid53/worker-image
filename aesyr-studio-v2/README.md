@@ -95,6 +95,16 @@ Open them from the top bar's **Library** button or the Idea stage's "Library" li
 - **Per-scene style:** each scene row in the shot list can override the project's scene preset.
 - **Database:** `library_entries.slug` is unique per built-in and per user, and the data is shape-checked. The built-ins are seeded by a generated migration (`npx tsx scripts/library-sql.ts`). A test fails if `shared/` changes without a new `*_library_builtins.sql` migration.
 
+## Character product explainer template
+
+- **Reference study:** `../references/product-explainer-study/`. It holds the measured numbers and the report; the reference film itself isn't stored. The measuring scripts are in `../tools/reference-analyser/`.
+- **Skills** (`../.claude/skills/`):
+  - `character-product-explainer`: the step-by-step template, from script outline to render.
+  - `scene-ui-cursor-walkthrough`: Apple-style UI with a hand cursor and 3D agent cursors (shots U1–U9).
+  - `scene-kinetic-type-mascot`: kinetic type with mascots (shots K1–K11).
+- **Library built-ins:** the narrative `character-product-explainer` and the presets `ui-cursor-walkthrough` and `kinetic-type-mascot`.
+- **Test bench:** open `http://127.0.0.1:5180/?prototype=explainer`. It renders one frame-exact test sequence per style in three.js: a halftone shader background, SDF text, bevelled 3D agent cursors, a hand cursor and toon stand-in mascots. "Load Tripo GLB…" swaps in a rigged Tripo character and drives its run, idle and wave clips by name.
+
 ## Database (milestone 1)
 
 The schema is in `supabase/migrations/`:

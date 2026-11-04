@@ -20,6 +20,7 @@ const EASES: Record<ScenePreset["camera"]["ease"], (u: number) => number> = {
   smootherstep: (u) => u * u * u * (u * (6 * u - 15) + 10),
   easeInOut: (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2),
   spring: (u) => 1 - Math.cos(u * Math.PI * 2.5) * Math.exp(-5 * u),
+  expoOut: (u) => (u >= 1 ? 1 : 1 - Math.pow(2, -10 * u)),
 };
 
 /** The glide's easing curve plus how far a hold creeps in one second. */

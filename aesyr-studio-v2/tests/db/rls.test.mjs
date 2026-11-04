@@ -229,13 +229,16 @@ test("library: built-ins seeded from code; slugs unique; data shape checked", as
   assert.deepEqual(
     builtins.map((r) => `${r.kind}:${r.slug}`),
     [
+      "narrative:character-product-explainer",
       "narrative:fact-short",
       "narrative:heros-journey",
       "narrative:kishotenketsu",
       "narrative:save-the-cat",
       "narrative:three-act",
       "scene_preset:continuous-glide",
+      "scene_preset:kinetic-type-mascot",
       "scene_preset:motion-graphics",
+      "scene_preset:ui-cursor-walkthrough",
     ],
   );
   const glide = await as("outsider", (tx) => one(tx, "select data from library_entries where slug = 'continuous-glide'"));
