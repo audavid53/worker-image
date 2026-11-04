@@ -105,6 +105,26 @@ Open them from the top bar's **Library** button or the Idea stage's "Library" li
 - **Library built-ins:** the narrative `character-product-explainer` and the presets `ui-cursor-walkthrough` and `kinetic-type-mascot`.
 - **Test bench:** open `http://127.0.0.1:5180/?prototype=explainer`. It renders one frame-exact test sequence per style in three.js: a halftone shader background, SDF text, bevelled 3D agent cursors, a hand cursor and toon stand-in mascots. "Load Tripo GLB…" swaps in a rigged Tripo character and drives its run, idle and wave clips by name.
 
+## Motion jobs: Tripo, UniMate, Blender
+
+This step animates Casting models into clips that three.js plays. The details, scaling and deploy steps are in [workers/README.md](workers/README.md).
+
+- **Job kinds** (`shared/motion.ts`):
+  - `tripo_character`: model → rig → preset clips
+  - `tripo_rig`
+  - `unimate_motion`: text-to-motion for any rigged skeleton
+  - `blender_motion`: object presets (spin, bob, door-swing …), custom keyframes, decimation, and merging clips into one GLB
+- **API** (dev server, `server/jobs.ts`):
+  - `POST /api/jobs {job, idempotencyKey?}` validates the job and reserves its credits.
+  - `GET /api/jobs/<id>` polls the job and moves it on one step.
+  - `POST /api/jobs/<id>/cancel` cancels it and refunds.
+  - Results are saved as `/media/<uuid>.glb`.
+- **Providers:**
+  - Tripo: `TRIPO_API_KEY`.
+  - RunPod Serverless: `RUNPOD_API_KEY` plus the endpoint ids.
+  - Without a Blender endpoint, local Blender runs the same recipes.
+- **Database:** `jobs.steps` and `jobs.provider_ref` (migration `…_motion_jobs.sql`).
+
 ## Database (milestone 1)
 
 The schema is in `supabase/migrations/`:

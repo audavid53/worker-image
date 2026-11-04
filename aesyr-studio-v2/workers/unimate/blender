@@ -1,0 +1,14 @@
+#!/bin/sh
+# UniMate's mesh scripts are called as `blender -b [--python-exit-code 1] -P script.py -- args`.
+# They support the pip bpy module (data_process/mesh_animation/common.py), so run them with the
+# environment's Python instead of shipping a second Blender.
+script=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -P|--python) script="$2"; shift 2 ;;
+    --) break ;;
+    *) shift ;;
+  esac
+done
+[ -n "$script" ] || { echo "blender shim: no -P script given" >&2; exit 2; }
+exec python "$script" "$@"

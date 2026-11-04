@@ -9,6 +9,10 @@ import { generateCode3D, generateImage, generateScript } from "./casting";
 import { ApiError, type ProviderEnv } from "./openai";
 import { generateStory } from "./story";
 import { MAX_AUDIO_BYTES, saveAudio } from "./media";
+import { MotionJobs, type MotionEnv } from "./jobs";
+
+/** Local dev has no sign-in yet; every request is this user (milestone 12 uses the Supabase session). */
+const DEV_USER = "local-dev";
 
 const MAX_BODY = 256 * 1024;
 
@@ -65,10 +69,12 @@ const MEDIA_TYPES: Record<string, string> = {
   mp3: "audio/mpeg",
   ogg: "audio/ogg",
   m4a: "audio/mp4",
+  glb: "model/gltf-binary",
 };
 
-export function devApi(env: ProviderEnv): Plugin {
+export function devApi(env: ProviderEnv & MotionEnv): Plugin {
   const mediaDir = env.MEDIA_DIR ?? ".local-media";
+  const jobs = new MotionJobs({ env });
   return {
     name: "aesyr-dev-api",
     configureServer(server) {
@@ -81,7 +87,7 @@ export function devApi(env: ProviderEnv): Plugin {
         };
 
         // Generated media: only flat <uuid>.<ext> names, so no path traversal.
-        const media = url.match(/^\/media\/([0-9a-f-]{36})\.(png|jpg|webp|wav|mp3|ogg|m4a)$/);
+        const media = url.match(/^\/media\/([0-9a-f-]{36})\.(png|jpg|webp|wav|mp3|ogg|m4a|glb)$/);
         if (media) {
           const file = join(mediaDir, `${media[1]}.${media[2]}`);
           try {
@@ -104,6 +110,26 @@ export function devApi(env: ProviderEnv): Plugin {
             send(e instanceof ApiError ? e.status : 500, { error: e instanceof ApiError ? e.message : "Upload failed" });
           }
           return;
+        }
+
+        // Motion jobs: POST creates (credits reserved), GET polls and advances, POST …/cancel refunds.
+        const jobPath = url.match(/^\/api\/jobs(?:\/([0-9a-f-]{36})(\/cancel)?)?$/);
+        if (jobPath) {
+          try {
+            const [, id, cancel] = jobPath;
+            if (!id && req.method === "POST") {
+              const body = (await readJson(req)) as { job?: unknown; idempotencyKey?: unknown };
+              const key = typeof body?.idempotencyKey === "string" && /^[\w-]{8,128}$/.test(body.idempotencyKey) ? body.idempotencyKey : undefined;
+              return send(200, await jobs.create(DEV_USER, body?.job, key));
+            }
+            if (id && cancel && req.method === "POST") return send(200, await jobs.cancel(DEV_USER, id));
+            if (id && !cancel && req.method === "GET") return send(200, await jobs.get(DEV_USER, id));
+            return send(405, { error: "Method not allowed" });
+          } catch (e) {
+            const status = e instanceof ApiError ? e.status : 500;
+            if (status === 500) server.config.logger.error(String(e));
+            return send(status, { error: e instanceof ApiError ? e.message : "Job failed" });
+          }
         }
 
         const handler = ROUTES[url];
