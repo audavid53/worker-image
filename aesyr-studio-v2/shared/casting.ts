@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { ASPECT_RATIOS } from "./story";
 import { ELEMENT_TYPES } from "./screenplay";
+import { NarrativeStructure } from "./library";
 
 // ---------- script ----------
 
@@ -15,6 +16,8 @@ export const ScriptRequest = z.object({
     .min(1)
     .max(40),
   characters: z.array(z.object({ name: z.string().min(1).max(80), description: z.string().max(1500) })).max(24),
+  /** The project's structure snapshot (custom structures aren't known to the server by id). */
+  narrative: NarrativeStructure.optional(),
 });
 export type ScriptRequest = z.infer<typeof ScriptRequest>;
 

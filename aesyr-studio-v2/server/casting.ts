@@ -27,7 +27,7 @@ export const SCRIPT_SCHEMA = s.obj({
 });
 
 export function scriptInstructions(req: ScriptRequest): string {
-  const t = narrativeById(req.narrativeId);
+  const t = narrativeById(req.narrativeId) ?? req.narrative;
   return [
     "You are a screenwriter. Write the screenplay for the outline below in standard screenplay form.",
     "Return scenes in order. Each scene has a heading like 'INT. LIGHTHOUSE LAMP ROOM - NIGHT' or 'EXT. BRIDGE - DAY', the key of the beat it serves, and its elements.",

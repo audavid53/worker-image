@@ -1,0 +1,99 @@
+// Built-in Scene Preset Library entries (plan §6.2). Parsed through the schema at load.
+import { z } from "zod";
+import { ScenePreset } from "./library";
+
+export type { ScenePreset } from "./library";
+
+const BUILTINS: z.input<typeof ScenePreset>[] = [
+  {
+    // Numbers derived from the claude-animated-shorts camera study (reports/motion.md, depth.md):
+    // reference medians across 20 shorts plus the values the bridge short shipped with.
+    id: "continuous-glide",
+    name: "Continuous glide",
+    blurb: "Smooth glides, creeping push-ins, cuts on big jumps.",
+    family: "continuous",
+    status: "ready",
+    camera: {
+      hold_pct: 10,
+      drift_pct: 25,
+      move_pct: 65,
+      glide_frames: [18, 40],
+      ease: "smootherstep",
+      peak_px_per_frame_720: 25,
+      push_in_pct_per_frame: [0.15, 0.35],
+      punch_pct_per_frame: 0.6,
+      max_static_frames: 4,
+      roll: { deg: [4, 5], frames: 18, per_10s: 3.2 },
+      kick: { decay_frames: 7, px: 3, sign_flip_every_frame: true },
+      whip: { per_min: 0.45, px_per_frame: [45, 93], motion_blur: true },
+      handheld: 0,
+    },
+    framing: {
+      ECU: { body_frames: 12, fov_deg: 25, lens_blur_px_1080: 15 },
+      CU: { body_frames: 5, fov_deg: 30, lens_blur_px_1080: 13 },
+      MCU: { body_frames: 2.6, fov_deg: 32, lens_blur_px_1080: 12 },
+      MS: { body_frames: 1.7, fov_deg: 35, lens_blur_px_1080: 11 },
+      MLS: { body_frames: 1.2, fov_deg: 35, lens_blur_px_1080: 7 },
+      FS: { body_frames: 0.9, fov_deg: 38, lens_blur_px_1080: 4 },
+      WS: { body_frames: 0.45, fov_deg: 45, lens_blur_px_1080: 0 },
+      EWS: { body_frames: 0.15, fov_deg: 50, lens_blur_px_1080: 0 },
+    },
+    focus: "eyes",
+    foreground_props_share: 0.33,
+    sync: { reaction_lead_frames: [0, 3], cut_on: "word" },
+    transitions: { default: "cut", on_place_change: "crossfade", on_time_change: "crossfade", flash_after_hook: true },
+    qa: { frozen_frames_max: 12, black_white_check: true, speed_spike_check: true },
+    readability_traps: [
+      "Every hold creeps (push in); a flat hold reads as a freeze.",
+      "A prop closer than ~2 m to the lens becomes a cut-off blob at the frame edge: recognisable or gone.",
+      "Rails at chest height cross torsos: put the lens ~2.5 m up so they cross legs instead.",
+      "Rim light only on the inner edge; an offset outer copy turns hats into picture frames.",
+      "Impact shakes flip sign every frame and die within 7 frames; never a slow wobble.",
+    ],
+    evidence: { source: "claude-animated-shorts references/reports (motion, depth): derived numbers only, no reference media." },
+  },
+  {
+    // Provisional: to be measured with the reference analyser (milestone 9) before it is "ready".
+    id: "motion-graphics",
+    name: "Motion graphics",
+    blurb: "Kinetic type, shape layers and on-beat transitions.",
+    family: "motion_graphics",
+    status: "draft",
+    camera: {
+      hold_pct: 45,
+      drift_pct: 15,
+      move_pct: 40,
+      glide_frames: [8, 16],
+      ease: "easeInOut",
+      peak_px_per_frame_720: 60,
+      push_in_pct_per_frame: [0, 0.1],
+      punch_pct_per_frame: 1.5,
+      max_static_frames: 48,
+      roll: { deg: [0, 0], frames: 1, per_10s: 0 },
+      kick: { decay_frames: 4, px: 6, sign_flip_every_frame: false },
+      whip: { per_min: 2, px_per_frame: [80, 200], motion_blur: true },
+      handheld: 0,
+    },
+    framing: {
+      ECU: { body_frames: 10, fov_deg: 20, lens_blur_px_1080: 0 },
+      CU: { body_frames: 4.5, fov_deg: 20, lens_blur_px_1080: 0 },
+      MCU: { body_frames: 2.4, fov_deg: 20, lens_blur_px_1080: 0 },
+      MS: { body_frames: 1.6, fov_deg: 20, lens_blur_px_1080: 0 },
+      MLS: { body_frames: 1.2, fov_deg: 20, lens_blur_px_1080: 0 },
+      FS: { body_frames: 0.9, fov_deg: 20, lens_blur_px_1080: 0 },
+      WS: { body_frames: 0.5, fov_deg: 20, lens_blur_px_1080: 0 },
+      EWS: { body_frames: 0.2, fov_deg: 20, lens_blur_px_1080: 0 },
+    },
+    focus: "none",
+    foreground_props_share: 0,
+    sync: { reaction_lead_frames: [0, 1], cut_on: "beat" },
+    transitions: { default: "wipe", on_place_change: "mask", on_time_change: "match-cut", flash_after_hook: false },
+    qa: { frozen_frames_max: 72, black_white_check: true, speed_spike_check: false },
+    readability_traps: ["No more than ~7 words of type on screen at once.", "Hold each text card long enough to read it twice."],
+    evidence: { source: "Provisional values; measure references with the analyser before relying on them." },
+  },
+];
+
+export const SCENE_PRESETS: ScenePreset[] = BUILTINS.map((p) => ScenePreset.parse({ ...p, source: "builtin" }));
+
+export const presetById = (id: string) => SCENE_PRESETS.find((p) => p.id === id);

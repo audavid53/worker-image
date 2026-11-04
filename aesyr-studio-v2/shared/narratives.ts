@@ -1,40 +1,25 @@
-// Narrative Library built-ins (plan §6.1). `share` is the fraction of runtime each beat gets;
-// the shares of a structure sum to 1. Stored here until the library is seeded into the database.
+// Built-in Narrative Library entries (plan §6.1). Parsed through the schema at load, so a
+// malformed built-in fails immediately (and in tests) rather than at generation time.
+import { z } from "zod";
+import { NarrativeStructure } from "./library";
 
-export interface NarrativeBeat {
-  key: string;
-  act: string;
-  name: string;
-  purpose: string;
-  share: number;
-  rules?: string[];
-}
+export type { NarrativeStructure, NarrativeBeat } from "./library";
 
-export interface NarrativeStructure {
-  id: string;
-  name: string;
-  blurb: string;
-  runtime: { min_s: number; max_s: number; default_s: number };
-  pace?: { words_per_s: number };
-  beats: NarrativeBeat[];
-  global_rules: string[];
-}
-
-export const NARRATIVES: NarrativeStructure[] = [
+const BUILTINS: z.input<typeof NarrativeStructure>[] = [
   {
     id: "three-act",
     name: "Three-Act",
     blurb: "Setup, confrontation, resolution: the classic shape.",
     runtime: { min_s: 30, max_s: 7200, default_s: 180 },
     beats: [
-      { key: "hook", act: "Setup", name: "Opening & hook", purpose: "Show the world and the protagonist; hook the viewer.", share: 0.08 },
-      { key: "inciting", act: "Setup", name: "Inciting incident", purpose: "The event that disrupts normal life.", share: 0.08 },
-      { key: "plot-point-1", act: "Setup", name: "Plot point 1", purpose: "The protagonist commits; no going back.", share: 0.09 },
-      { key: "rising", act: "Confrontation", name: "Rising action", purpose: "Obstacles grow; stakes rise.", share: 0.2 },
-      { key: "midpoint", act: "Confrontation", name: "Midpoint", purpose: "A reversal or revelation changes the goal.", share: 0.1 },
-      { key: "crisis", act: "Confrontation", name: "Crisis", purpose: "Everything falls apart; the lowest point.", share: 0.2 },
-      { key: "climax", act: "Resolution", name: "Climax", purpose: "The final confrontation decides the story.", share: 0.17 },
-      { key: "resolution", act: "Resolution", name: "Resolution", purpose: "The new normal; what changed.", share: 0.08 },
+      { key: "hook", act: "Setup", name: "Opening & hook", purpose: "Show the world and the protagonist; hook the viewer.", share: 0.08, default_shot_bias: { sizes: ["WS", "CU"], moves: ["Push in"] } },
+      { key: "inciting", act: "Setup", name: "Inciting incident", purpose: "The event that disrupts normal life.", share: 0.08, default_shot_bias: { sizes: ["MS", "CU"], moves: ["Static", "Push in"] } },
+      { key: "plot-point-1", act: "Setup", name: "Plot point 1", purpose: "The protagonist commits; no going back.", share: 0.09, default_shot_bias: { sizes: ["MCU"], moves: ["Push in"] } },
+      { key: "rising", act: "Confrontation", name: "Rising action", purpose: "Obstacles grow; stakes rise.", share: 0.2, default_shot_bias: { sizes: ["MS", "FS"], moves: ["Tracking shot", "Pan"] } },
+      { key: "midpoint", act: "Confrontation", name: "Midpoint", purpose: "A reversal or revelation changes the goal.", share: 0.1, default_shot_bias: { sizes: ["CU"], moves: ["Push in"] } },
+      { key: "crisis", act: "Confrontation", name: "Crisis", purpose: "Everything falls apart; the lowest point.", share: 0.2, default_shot_bias: { sizes: ["WS", "ECU"], moves: ["Pull out", "Static"] } },
+      { key: "climax", act: "Resolution", name: "Climax", purpose: "The final confrontation decides the story.", share: 0.17, default_shot_bias: { sizes: ["MS", "CU"], moves: ["Tracking shot", "Handheld"] } },
+      { key: "resolution", act: "Resolution", name: "Resolution", purpose: "The new normal; what changed.", share: 0.08, default_shot_bias: { sizes: ["WS", "EWS"], moves: ["Crane", "Pull out"] } },
     ],
     global_rules: ["Every beat changes the situation.", "The climax answers the question raised by the inciting incident."],
   },
@@ -103,25 +88,22 @@ export const NARRATIVES: NarrativeStructure[] = [
     runtime: { min_s: 55, max_s: 70, default_s: 62 },
     pace: { words_per_s: 3.7 },
     beats: [
-      { key: "hook", act: "Hook", name: "Hook", purpose: "The absurd fact in one line.", share: 0.07, rules: ["One line."] },
-      { key: "setting", act: "Story", name: "Setting", purpose: "Year, place, pride.", share: 0.1 },
-      { key: "escalation", act: "Story", name: "Escalation", purpose: "Three or four beats, each a little bigger.", share: 0.25, rules: ["3–4 escalations, each bigger."] },
-      { key: "snap", act: "Story", name: "Snap", purpose: "The moment it breaks.", share: 0.08 },
-      { key: "deadpan", act: "Story", name: "Deadpan double", purpose: "'Luckily… / Unluckily…'", share: 0.08 },
-      { key: "analogy", act: "Explain", name: "Explanation by analogy", purpose: "One idea through an everyday analogy.", share: 0.2 },
-      { key: "consequence", act: "Explain", name: "Consequence", purpose: "The rule it created.", share: 0.12 },
-      { key: "callback", act: "Ending", name: "Callback twist", purpose: "The ending calls back to the hook.", share: 0.1 },
+      { key: "hook", act: "Hook", name: "Hook", purpose: "The absurd fact in one line.", share: 0.07, rules: ["One line."], default_shot_bias: { sizes: ["CU", "ECU"], moves: ["Push in"] } },
+      { key: "setting", act: "Story", name: "Setting", purpose: "Year, place, pride.", share: 0.1, default_shot_bias: { sizes: ["EWS", "WS"], moves: ["Crane", "Dolly"] } },
+      { key: "escalation", act: "Story", name: "Escalation", purpose: "Three or four beats, each a little bigger.", share: 0.25, rules: ["3–4 escalations, each bigger."], default_shot_bias: { sizes: ["MS", "MCU"], moves: ["Tracking shot", "Push in"] } },
+      { key: "snap", act: "Story", name: "Snap", purpose: "The moment it breaks.", share: 0.08, default_shot_bias: { sizes: ["CU", "WS"], moves: ["Static"] } },
+      { key: "deadpan", act: "Story", name: "Deadpan double", purpose: "'Luckily… / Unluckily…'", share: 0.08, default_shot_bias: { sizes: ["MS"], moves: ["Static"] } },
+      { key: "analogy", act: "Explain", name: "Explanation by analogy", purpose: "One idea through an everyday analogy.", share: 0.2, default_shot_bias: { sizes: ["MS", "FS"], moves: ["Orbit", "Push in"] } },
+      { key: "consequence", act: "Explain", name: "Consequence", purpose: "The rule it created.", share: 0.12, default_shot_bias: { sizes: ["WS"], moves: ["Pull out"] } },
+      { key: "callback", act: "Ending", name: "Callback twist", purpose: "The ending calls back to the hook.", share: 0.1, default_shot_bias: { sizes: ["CU"], moves: ["Push in"] } },
     ],
     global_rules: ["Never narrate what the viewer already sees.", "Jokes are real, researched facts."],
+    evidence: { report_md: "Beat formula from claude-animated-shorts SKILL.md (\"The Bridge That Fell for a Song\")." },
   },
 ];
+
+export const NARRATIVES: NarrativeStructure[] = BUILTINS.map((n) => NarrativeStructure.parse({ ...n, source: "builtin" }));
 
 export const CUSTOM_NARRATIVE_ID = "custom";
 
 export const narrativeById = (id: string) => NARRATIVES.find((n) => n.id === id);
-
-/** Scene presets offered at the Idea stage. Their numeric camera grammar lands in milestone 6. */
-export const SCENE_PRESETS = [
-  { id: "continuous-glide", name: "Continuous glide", blurb: "Smooth glides, creeping push-ins, cuts on big jumps." },
-  { id: "motion-graphics", name: "Motion graphics", blurb: "Kinetic type, shape layers and on-beat transitions." },
-] as const;

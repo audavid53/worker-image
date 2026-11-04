@@ -91,7 +91,7 @@ export function StoryOutline() {
           onChange={(e) => p.updateMeta({ name: e.target.value })}
         />
         <div className="outline-meta">
-          <span>{narrativeName(meta.narrativeId)}</span>
+          <span>{narrativeName(meta)}</span>
           <span>{meta.aspectRatio}</span>
           <span data-warn={Math.abs(planned - meta.runtimeSeconds) > meta.runtimeSeconds * 0.1 || undefined}>
             {fmt(planned)} of {fmt(meta.runtimeSeconds)}

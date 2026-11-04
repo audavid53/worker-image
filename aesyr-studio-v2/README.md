@@ -79,6 +79,22 @@ Open it from a scene node's **Timeline** button on the Director canvas (`src/sta
 | Lines | Drag a script line from the sidebar onto Dialogue or Text. Its length comes from the template's speaking pace. Double-click a clip to edit its text. |
 | Captions | Export Dialogue and Text clips as an SRT file. |
 
+## Libraries (milestone 6)
+
+Open them from the top bar's **Library** button or the Idea stage's "Library" links.
+
+- **Schemas** (`shared/library.ts`, zod):
+  - A **NarrativeStructure** has beats with shares that must add up to 100%, unique keys, optional rules and shot hints for the auto-director, a runtime range and a narration pace.
+  - A **ScenePreset** holds the numeric camera grammar: the hold/drift/move mix (must add up to 100%), glide frames and easing, the cut threshold, push-in rates, roll, kick and whip settings. It also has a framing table per shot size, focus, sync, transitions, QA limits and readability traps.
+- **Built-ins:**
+  - Story structures (`shared/narratives.ts`): Three-Act, Save the Cat, Hero's Journey, Kishōtenketsu and Fact short.
+  - Scene presets (`shared/scene-presets.ts`): **Continuous glide**, with numbers from the claude-animated-shorts camera study, and **Motion graphics**, marked *draft* until milestone 9 measures real references.
+  - Both are checked against the schemas when they load.
+- **Your own entries:** duplicate a built-in, or start a new structure, then edit it. Saving is refused until the entry is valid (for example "beat shares must add up to 100%"); "Normalise to 100%" fixes shares. Entries belong to each user.
+- **Projects keep copies:** each project stores the structure and preset it was made with, so editing or deleting a library entry never changes an existing film. Custom structures are sent with story and script requests, and the server checks them with the same schema.
+- **Per-scene style:** each scene row in the shot list can override the project's scene preset.
+- **Database:** `library_entries.slug` is unique per built-in and per user, and the data is shape-checked. The built-ins are seeded by a generated migration (`npx tsx scripts/library-sql.ts`). A test fails if `shared/` changes without a new `*_library_builtins.sql` migration.
+
 ## Database (milestone 1)
 
 The schema is in `supabase/migrations/`:

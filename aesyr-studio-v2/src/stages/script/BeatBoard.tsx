@@ -1,7 +1,6 @@
 import { CaretLeft, CaretRight, MapPin, User } from "@phosphor-icons/react";
 import { splitScenes } from "../../../shared/screenplay";
-import { narrativeById } from "../../../shared/narratives";
-import { useProject } from "../../data/project";
+import { projectPace, useProject } from "../../data/project";
 import type { CastLinks } from "../../data/script-ops";
 
 /** Seconds a scene probably runs: narration/dialogue at the template pace, action at ~2.5 words/s. */
@@ -17,7 +16,7 @@ export function BeatBoard({ links, onOpenScene }: Props) {
   const p = useProject();
   const { script, sceneMeta, beats, characters, environments, meta } = p.state;
   const scenes = splitScenes(script);
-  const wps = (meta && narrativeById(meta.narrativeId)?.pace?.words_per_s) ?? 2.5;
+  const wps = projectPace(meta);
 
   const moveScene = (index: number, dir: -1 | 1) => {
     const j = index + dir;

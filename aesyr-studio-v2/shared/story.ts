@@ -1,5 +1,6 @@
 // Story generation contract shared by the client and the /api/story endpoint.
 import { z } from "zod";
+import { NarrativeStructure } from "./library";
 
 export const ASPECT_RATIOS = ["16:9", "2.39:1", "9:16", "1:1", "4:5"] as const;
 
@@ -10,6 +11,8 @@ export const StoryRequest = z.object({
   scenePresetId: z.string().min(1).max(60),
   runtimeSeconds: z.number().int().min(10).max(7200),
   idea: z.string().trim().min(1).max(60_000),
+  /** A user's own structure from the library (built-ins are looked up by id on the server). */
+  narrative: NarrativeStructure.optional(),
 });
 export type StoryRequest = z.infer<typeof StoryRequest>;
 

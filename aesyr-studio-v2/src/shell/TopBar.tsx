@@ -1,4 +1,5 @@
 import {
+  Books,
   ArrowsIn,
   ArrowsOut,
   Columns,
@@ -32,6 +33,7 @@ interface Props {
   onPinned: (p: boolean) => void;
   focus: boolean;
   onFocus: (f: boolean) => void;
+  onLibrary: () => void;
 }
 
 /** Toolbar button: icon always visible, label collapses until the bar is hovered, focused or pinned. */
@@ -102,6 +104,7 @@ export function TopBar(p: Props) {
           </div>
         )}
 
+        <TbButton icon={Books} label="Library" title="Story structures and scene presets" onClick={p.onLibrary} />
         <TbButton
           icon={p.theme === "light" ? Sun : Moon}
           label={THEME_LABEL[p.theme]}

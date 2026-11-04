@@ -1,9 +1,9 @@
 import { useMemo, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Copy, DotsSixVertical, FilmStrip, Plus, Trash } from "@phosphor-icons/react";
-import { narrativeById } from "../../../shared/narratives";
 import { splitScenes } from "../../../shared/screenplay";
 import { CAMERA_ANGLES, CAMERA_MOVES, SHOT_SIZES, SHOT_STATUSES, SHOT_VIEWS, type Shot } from "../../../shared/shots";
-import { useProject } from "../../data/project";
+import { projectPace, useProject } from "../../data/project";
+import { useLibrary } from "../../data/library";
 import { fmtTime, shotTimings } from "../../data/shot-ops";
 import { CastPicker } from "./CastPicker";
 import { ShotThumb } from "./ShotThumb";
@@ -37,13 +37,14 @@ type DropHint = { id: string; where: "before" | "after" } | { scene: string } | 
 
 export function ShotList() {
   const p = useProject();
+  const lib = useLibrary();
   const { meta, script, shots, characters, environments, sceneMeta } = p.state;
   const [dragId, setDragId] = useState<string | null>(null);
   const [hint, setHint] = useState<DropHint>(null);
 
   const scenes = useMemo(() => splitScenes(script), [script]);
   const timings = useMemo(() => shotTimings(script, shots), [script, shots]);
-  const wps = (meta && narrativeById(meta.narrativeId)?.pace?.words_per_s) ?? 2.5;
+  const wps = projectPace(meta);
 
   if (!meta || !script.length) {
     return (
@@ -159,6 +160,21 @@ export function ShotList() {
                     <button className="btn btn--sm" onClick={() => p.addShot(scene.id)}>
                       <Plus size={12} aria-hidden /> Shot
                     </button>
+                    <select
+                      className="scene-preset"
+                      aria-label={`Scene ${scene.index + 1} style`}
+                      title="Scene style (overrides the project's)"
+                      value={sceneMeta[scene.id]?.presetId ?? ""}
+                      onChange={(e) => p.setSceneMeta(scene.id, { presetId: e.target.value || undefined })}
+                    >
+                      <option value="">Style: {meta.scenePreset?.name ?? lib.preset(meta.scenePresetId)?.name ?? "project default"}</option>
+                      {lib.presets.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name}
+                          {x.status === "draft" ? " (draft)" : ""}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                 </tr>
                 {mine.map((shot) => {

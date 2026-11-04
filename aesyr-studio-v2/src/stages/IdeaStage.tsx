@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { CircleNotch, MagicWand, PencilSimpleLine } from "@phosphor-icons/react";
-import { CUSTOM_NARRATIVE_ID, NARRATIVES, SCENE_PRESETS, narrativeById } from "../../shared/narratives";
+import { Books, CircleNotch, MagicWand, PencilSimpleLine } from "@phosphor-icons/react";
+import { CUSTOM_NARRATIVE_ID } from "../../shared/narratives";
 import { ASPECT_RATIOS, type StoryResponse } from "../../shared/story";
+import { useLibrary } from "../data/library";
 import { draftToState, useProject } from "../data/project";
 
 interface Props {
@@ -11,21 +12,24 @@ interface Props {
 
 export function IdeaStage({ onGenerated }: Props) {
   const { state, replace } = useProject();
+  const lib = useLibrary();
   const m = state.meta;
   const [name, setName] = useState(m?.name ?? "");
   const [aspect, setAspect] = useState(m?.aspectRatio ?? "16:9");
-  const [narrativeId, setNarrativeId] = useState(m?.narrativeId ?? NARRATIVES[0].id);
-  const [presetId, setPresetId] = useState(m?.scenePresetId ?? SCENE_PRESETS[0].id);
-  const [runtime, setRuntime] = useState(m?.runtimeSeconds ?? NARRATIVES[0].runtime.default_s);
+  const [narrativeId, setNarrativeId] = useState(m?.narrativeId ?? lib.narratives[0].id);
+  const [presetId, setPresetId] = useState(m?.scenePresetId ?? lib.presets[0].id);
+  const [runtime, setRuntime] = useState(m?.runtimeSeconds ?? lib.narratives[0].runtime.default_s);
   const [idea, setIdea] = useState(m?.idea ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const template = narrativeById(narrativeId);
+  // A project made with a since-deleted user entry still has its snapshot.
+  const template = lib.narrative(narrativeId) ?? (m?.narrative?.id === narrativeId ? m.narrative : undefined);
+  const preset = lib.preset(presetId) ?? (m?.scenePreset?.id === presetId ? m.scenePreset : undefined);
 
   const pickTemplate = (id: string) => {
     setNarrativeId(id);
-    const t = narrativeById(id);
+    const t = lib.narrative(id);
     if (t) setRuntime(t.runtime.default_s);
   };
 
@@ -41,6 +45,8 @@ export function IdeaStage({ onGenerated }: Props) {
       scenePresetId: presetId,
       runtimeSeconds: runtime,
       idea,
+      // Built-ins are known to the server by id; the user's own structures travel with the request.
+      narrative: template && !lib.isBuiltin(template.id) ? template : undefined,
     };
     try {
       const res = await fetch("/api/story", {
@@ -62,6 +68,8 @@ export function IdeaStage({ onGenerated }: Props) {
             idea,
             logline: "",
             generatedBy: out.source,
+            narrative: template,
+            scenePreset: preset,
           },
           out.draft,
         ),
@@ -107,9 +115,14 @@ export function IdeaStage({ onGenerated }: Props) {
         </fieldset>
 
         <fieldset className="field">
-          <legend>Story structure</legend>
+          <legend className="legend-row">
+            Story structure
+            <button type="button" className="link-btn" onClick={() => lib.openLibrary("narrative", narrativeId)}>
+              <Books size={13} aria-hidden /> Library
+            </button>
+          </legend>
           <div className="template-grid">
-            {NARRATIVES.map((n) => (
+            {lib.narratives.map((n) => (
               <button
                 type="button"
                 key={n.id}
@@ -120,7 +133,9 @@ export function IdeaStage({ onGenerated }: Props) {
               >
                 <strong>{n.name}</strong>
                 <span>{n.blurb}</span>
-                <em>{n.beats.length} beats</em>
+                <em>
+                  {n.beats.length} beats{lib.isBuiltin(n.id) ? "" : " · yours"}
+                </em>
               </button>
             ))}
             <button
@@ -151,19 +166,25 @@ export function IdeaStage({ onGenerated }: Props) {
             />
           </label>
           <fieldset className="field">
-            <legend>Scene style</legend>
+            <legend className="legend-row">
+              Scene style
+              <button type="button" className="link-btn" onClick={() => lib.openLibrary("scene_preset", presetId)}>
+                <Books size={13} aria-hidden /> Library
+              </button>
+            </legend>
             <div className="template-row">
-              {SCENE_PRESETS.map((p) => (
+              {lib.presets.map((p) => (
                 <button
                   type="button"
                   key={p.id}
                   className="pill"
-                  title={p.blurb}
+                  title={`${p.blurb}${p.status === "draft" ? " (draft numbers)" : ""}`}
                   data-active={presetId === p.id || undefined}
                   aria-pressed={presetId === p.id}
                   onClick={() => setPresetId(p.id)}
                 >
                   {p.name}
+                  {p.status === "draft" && <em className="pill-badge">draft</em>}
                 </button>
               ))}
             </div>

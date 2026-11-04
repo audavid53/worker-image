@@ -19,10 +19,9 @@ import {
   TextAlignLeft,
   Waves,
 } from "@phosphor-icons/react";
-import { narrativeById } from "../../../shared/narratives";
 import { splitScenes, cueName } from "../../../shared/screenplay";
 import { TRACK_KINDS, TRACK_LABEL, type Clip, type TrackKind } from "../../../shared/timeline";
-import { newId, useProject } from "../../data/project";
+import { newId, projectPace, useProject } from "../../data/project";
 import { fmtTime } from "../../data/shot-ops";
 import {
   addClip,
@@ -81,7 +80,7 @@ function tickStep(pps: number) {
 export function SceneTimeline({ sceneId, onClose }: { sceneId: string; onClose: () => void }) {
   const p = useProject();
   const { script, shots, timelines, meta, sceneMeta } = p.state;
-  const wps = (meta && narrativeById(meta.narrativeId)?.pace?.words_per_s) ?? 2.5;
+  const wps = projectPace(meta);
 
   useEffect(() => p.ensureTimeline(sceneId, wps), [sceneId]); // eslint-disable-line react-hooks/exhaustive-deps
 

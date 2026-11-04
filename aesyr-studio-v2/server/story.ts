@@ -142,7 +142,9 @@ export async function generateStory(body: unknown, env: StoryEnv, fetchImpl: typ
   const parsed = StoryRequest.safeParse(body);
   if (!parsed.success) throw new ApiError(400, `Invalid request: ${parsed.error.issues.map((i) => i.path.join(".")).join(", ")}`);
   const req = parsed.data;
-  const template = req.narrativeId === CUSTOM_NARRATIVE_ID ? undefined : narrativeById(req.narrativeId);
+  // Built-ins by id; a user's own structure travels in the request (already schema-validated).
+  const template =
+    req.narrativeId === CUSTOM_NARRATIVE_ID ? undefined : (narrativeById(req.narrativeId) ?? (req.narrative?.id === req.narrativeId ? req.narrative : undefined));
   if (!template && req.narrativeId !== CUSTOM_NARRATIVE_ID) throw new ApiError(400, "Unknown story template");
 
   if (!env.OPENAI_API_KEY) {

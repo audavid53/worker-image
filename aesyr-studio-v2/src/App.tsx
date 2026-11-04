@@ -14,6 +14,8 @@ import { CastingCanvas } from "./stages/script/CastingCanvas";
 import { ShotList } from "./stages/shots/ShotList";
 import { DirectorCanvas } from "./stages/shots/DirectorCanvas";
 import type { ReactNode } from "react";
+import { useLibrary } from "./data/library";
+import { LibraryDialog } from "./library/LibraryDialog";
 
 /** Built panels per stage; stages not built yet fall back to placeholders. */
 const PANELS: Partial<Record<StageId, { a: () => ReactNode; b: () => ReactNode }>> = {
@@ -33,6 +35,7 @@ export function App() {
   const [pinned, setPinned] = useStoredState("toolbarPinned", false);
   const [focus, setFocus] = useStoredState("focusMode", false);
   const { state: project } = useProject();
+  const library = useLibrary();
 
   const stage = STAGES.find((s) => s.id === stageId && isUnlocked(s.id, approved)) ?? STAGES[0];
   const view = views[stage.id] ?? "split";
@@ -98,6 +101,7 @@ export function App() {
         onPinned={setPinned}
         focus={focus}
         onFocus={setFocus}
+        onLibrary={() => library.openLibrary(library.ui.kind)}
       />
       <main className="stage-body">
         {stage.single || !stage.b ? (
@@ -126,6 +130,7 @@ export function App() {
         onApprove={approve}
         onReopen={reopen}
       />
+      <LibraryDialog />
     </div>
   );
 }

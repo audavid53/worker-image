@@ -34,6 +34,32 @@ test("without an API key returns an offline draft with the template's beats", as
   assert.equal(r.draft.characters[0].name, "Protagonist");
 });
 
+test("a user's own structure travels with the request and drives the beats", async () => {
+  const mine = {
+    id: "my-heist-ab12",
+    name: "Heist",
+    blurb: "",
+    runtime: { min_s: 30, max_s: 300, default_s: 90 },
+    beats: [
+      { key: "crew", act: "Setup", name: "Assemble the crew", purpose: "", share: 0.3 },
+      { key: "job", act: "Job", name: "The job", purpose: "", share: 0.5 },
+      { key: "twist", act: "Twist", name: "Double-cross", purpose: "", share: 0.2 },
+    ],
+    global_rules: [],
+  };
+  const r = await generateStory({ ...base, narrativeId: mine.id, narrative: mine, runtimeSeconds: 90 }, {});
+  assert.deepEqual(
+    r.draft.beats.map((b) => b.key),
+    ["crew", "job", "twist"],
+  );
+  await assert.rejects(generateStory({ ...base, narrativeId: "my-unknown" }, {}), /Unknown story template/);
+  await assert.rejects(
+    generateStory({ ...base, narrativeId: mine.id, narrative: { ...mine, beats: [{ ...mine.beats[0], share: 0.1 }] } }, {}),
+    (e: unknown) => e instanceof StoryError && e.status === 400,
+    "an invalid structure (shares not 100%) is rejected",
+  );
+});
+
 test("offline draft picks character names from a pasted screenplay", () => {
   const script = `INT. MINES - NIGHT\n\nGANDOLF\nRun!\n\nPRIVATE JONES (V.O.)\nWait.\n\nGANDOLF\nGo now.\n\nCUT TO:\n\nEXT. BRIDGE - NIGHT`;
   assert.deepEqual(extractScriptCharacters(script), ["Gandolf", "Private Jones"]);

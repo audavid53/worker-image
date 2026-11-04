@@ -2,6 +2,7 @@
 // character_relationships) so the Supabase repository can replace localStorage later.
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import { narrativeById } from "../../shared/narratives";
+import type { NarrativeStructure, ScenePreset } from "../../shared/library";
 import type { StoryDraft } from "../../shared/story";
 import { NEXT_TYPE, type ElementType, type ScriptElement } from "../../shared/screenplay";
 import { useStoredState } from "../useStoredState";
@@ -22,6 +23,9 @@ export interface ProjectMeta {
   idea: string;
   logline: string;
   generatedBy?: "openai" | "offline";
+  /** Snapshots of the library entries the project was made with (user entries may change later). */
+  narrative?: NarrativeStructure;
+  scenePreset?: ScenePreset;
 }
 
 export interface Beat {
@@ -362,4 +366,10 @@ export function useProject() {
   return v;
 }
 
-export const narrativeName = (id: string) => narrativeById(id)?.name ?? "Custom structure";
+/** The project's narrative structure: its snapshot, else the built-in with that id. */
+export const projectNarrative = (meta: ProjectMeta | null) => meta?.narrative ?? (meta ? narrativeById(meta.narrativeId) : undefined);
+
+export const narrativeName = (meta: ProjectMeta) => projectNarrative(meta)?.name ?? "Custom structure";
+
+/** Speaking pace (words per second) used for durations; 2.5 when the structure sets none. */
+export const projectPace = (meta: ProjectMeta | null) => projectNarrative(meta)?.pace?.words_per_s ?? 2.5;

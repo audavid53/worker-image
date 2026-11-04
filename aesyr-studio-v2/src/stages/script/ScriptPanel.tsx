@@ -53,6 +53,7 @@ export function ScriptPanel() {
       const { draft } = await postJson<{ draft: ScriptDraft }>("/api/script", {
         projectName: meta.name || "Untitled film",
         narrativeId: meta.narrativeId,
+        narrative: meta.narrative,
         runtimeSeconds: meta.runtimeSeconds,
         logline: meta.logline,
         beats: beats.map((b) => ({ key: b.key, name: b.name, summary: b.summary, targetSeconds: b.targetSeconds })),

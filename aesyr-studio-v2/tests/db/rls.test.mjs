@@ -200,20 +200,72 @@ test("timelines: one per scene, shape-checked, revision bumps on save", async ()
     }),
     /timelines_doc_shape/,
   );
+  await assert.rejects(
+    as("editor", async (tx) => {
+      const scene = await one(tx, "insert into scenes (project_id, position) values ($1, 2) returning id", [project]);
+      await tx.query("insert into timelines (project_id, scene_id, doc) values ($1, $2, '{\"clips\": [], \"markers\": []}')", [project, scene.id]);
+    }),
+    /timelines_doc_shape/,
+    "a missing key is rejected too",
+  );
 });
 
 test("built-in library entries are shared; user entries are private", async () => {
-  await asService((tx) =>
-    tx.query("insert into library_entries (kind, scope, name) values ('narrative', 'builtin', 'Fact short')"),
-  );
   await commitAs("owner", (tx) =>
-    tx.query("insert into library_entries (kind, scope, owner_id, name) values ('scene_preset', 'user', auth.uid(), 'My glide')"),
+    tx.query(
+      `insert into library_entries (kind, scope, owner_id, slug, name, data) values ('scene_preset', 'user', auth.uid(), 'my-glide', 'My glide', '{"camera": {}}')`,
+    ),
   );
-  assert.equal(await as("outsider", (tx) => count(tx, "select 1 from library_entries where name = 'Fact short'")), 1);
+  assert.equal(await as("outsider", (tx) => count(tx, "select 1 from library_entries where slug = 'fact-short' and scope = 'builtin'")), 1);
   assert.equal(await as("outsider", (tx) => count(tx, "select 1 from library_entries where name = 'My glide'")), 0);
   await assert.rejects(
-    as("outsider", (tx) => tx.query("insert into library_entries (kind, scope, name) values ('narrative', 'builtin', 'Fake')")),
+    as("outsider", (tx) => tx.query(`insert into library_entries (kind, scope, slug, name, data) values ('narrative', 'builtin', 'fake', 'Fake', '{"beats": []}')`)),
     /row-level security/,
+  );
+});
+
+test("library: built-ins seeded from code; slugs unique; data shape checked", async () => {
+  const builtins = await as("outsider", async (tx) => (await tx.query("select kind, slug from library_entries where scope = 'builtin' order by kind, slug")).rows);
+  assert.deepEqual(
+    builtins.map((r) => `${r.kind}:${r.slug}`),
+    [
+      "narrative:fact-short",
+      "narrative:heros-journey",
+      "narrative:kishotenketsu",
+      "narrative:save-the-cat",
+      "narrative:three-act",
+      "scene_preset:continuous-glide",
+      "scene_preset:motion-graphics",
+    ],
+  );
+  const glide = await as("outsider", (tx) => one(tx, "select data from library_entries where slug = 'continuous-glide'"));
+  assert.deepEqual(glide.data.camera.glide_frames, [18, 40]);
+
+  await assert.rejects(
+    asService((tx) => tx.query(`insert into library_entries (kind, scope, slug, name, data) values ('narrative', 'builtin', 'fact-short', 'Dup', '{"beats": []}')`)),
+    /duplicate key/,
+  );
+  await assert.rejects(
+    commitAs("owner", (tx) =>
+      tx.query(`insert into library_entries (kind, scope, owner_id, slug, name, data) values ('narrative', 'user', auth.uid(), 'bad', 'Bad', '{"no_beats": true}')`),
+    ),
+    /library_entries_data_shape/,
+  );
+  await assert.rejects(
+    commitAs("owner", (tx) =>
+      tx.query(`insert into library_entries (kind, scope, owner_id, slug, name, data) values ('narrative', 'user', auth.uid(), 'Bad Slug!', 'X', '{"beats": []}')`),
+    ),
+    /library_entries_slug_format/,
+  );
+  // Another user may reuse a slug; the same user may not.
+  await commitAs("outsider", (tx) =>
+    tx.query(`insert into library_entries (kind, scope, owner_id, slug, name, data) values ('scene_preset', 'user', auth.uid(), 'my-glide', 'Theirs', '{"camera": {}}')`),
+  );
+  await assert.rejects(
+    commitAs("owner", (tx) =>
+      tx.query(`insert into library_entries (kind, scope, owner_id, slug, name, data) values ('scene_preset', 'user', auth.uid(), 'my-glide', 'Again', '{"camera": {}}')`),
+    ),
+    /duplicate key/,
   );
 });
 

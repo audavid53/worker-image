@@ -13,6 +13,8 @@ export interface Environment {
 export interface SceneMeta {
   beatId?: string;
   color: number;
+  /** Scene-specific preset; falls back to the project's. */
+  presetId?: string;
 }
 
 export interface CastAsset {
