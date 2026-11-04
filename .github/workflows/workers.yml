@@ -21,27 +21,47 @@ jobs:
         worker: [blender, unimate]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Rebuild only the worker whose folder changed (run it by hand from the Actions tab to build both).
+      # UniMate's requirements pull unpinned git packages, so a needless rebuild can fail for upstream reasons.
+      - name: Did this worker change?
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             || ! git rev-parse -q --verify HEAD^ >/dev/null \
+             || ! git diff --quiet HEAD^ HEAD -- "aesyr-studio-v2/workers/${{ matrix.worker }}"; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "No changes in aesyr-studio-v2/workers/${{ matrix.worker }}; skipping."
+          fi
 
       # The UniMate image (CUDA + torch + checkpoint) needs more disk than a runner has free.
       - name: Free disk space
-        if: matrix.worker == 'unimate'
+        if: matrix.worker == 'unimate' && steps.changed.outputs.build == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
           df -h /
 
       - uses: docker/setup-buildx-action@v3
+        if: steps.changed.outputs.build == 'true'
       - uses: docker/login-action@v3
+        if: steps.changed.outputs.build == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Image name
+        if: steps.changed.outputs.build == 'true'
         id: name
         run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aesyr-${{ matrix.worker }}-worker" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
+        if: steps.changed.outputs.build == 'true'
         with:
           context: aesyr-studio-v2/workers/${{ matrix.worker }}
           platforms: linux/amd64
